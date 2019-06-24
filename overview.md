@@ -32,8 +32,8 @@ than available---flash空间不够用时，将会覆盖其他区域。
 + device will receive gps signal at least once every 15sec when ignition is on---点火后每15秒接收gps信号用于内部使用。
 + device will provide basic sanity check on new GPS location---提供新GPS位置检测
 + if gps location is suspect:---GPS信息可疑时提供：
-  * save last good location---上一个确定的位置
-  * provide location aging---位置老化功能
+  * save last good location---保存上一个合理的位置信息
+  * provide location aging---提供位置信息老化
 + drift control: define its location based on last "dynamic" GPS fix record---设置停车位置为上一次的动态GPS修正位置
 
 ## watch mode
@@ -55,9 +55,9 @@ than available---flash空间不够用时，将会覆盖其他区域。
 to the requet and sending GPS position at the time requeest received---通过应答来disable engine，在收到请求的同时发送gps位置信息
 + condition for disabling the starter:
   + 熄火
-  + 汽车停止
+  + 汽车静止
   + 有效的网络覆盖
-  + GPS修正有效
+  + 有效的GPS修正
 + **以上条件需同时满足**
 
 ## manual starter override
