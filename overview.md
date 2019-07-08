@@ -67,31 +67,31 @@ to the requet and sending GPS position at the time requeest received---通过应
  times this feature get used;---计数器跟踪MSO使用次数，减到0时，disable MSO
  + **3** in order to initiate an ignition on/off cycle, the ignition needs to be off
  for 15sec---熄火15秒，用以初始化点火熄火周期。
- + **4** manual override require the following key sequence to re-enable the starter;---重新使能starter时的关键序列。
+ + **4** manual override require the following key sequence to re-enable the starter;---重新使能starter时的*关键序列*。
  + **5** manual counter can be reset;---计数器可以通过配置参数配置
  + **6** "emergency enable"command will override MSO feature.
 
 ## device theft/tow away detection and reporting
-+ detected via accelerometer
-+ enable when ignition is off
++ detected via accelerometer --- 汽车运动状态通过加计检测。
++ enable when ignition is off --- 熄火状态下进行盗车、拖车检测
 + tow event is generated if there is a change in postion that is more than a predefined
-limit during ignition off
+limit during ignition off --- 拖车事件产生条件。
 
 ## external sensor support
-+ sensor connected to analog inputs will be monitored periodically.
-+ a user will be able to remotely control digital outputs
++ sensor connected to analog inputs will be monitored periodically. --- 周期性检测模拟输入。通过检测读取值是否超过对应百分比决定是否上报事件。
++ a user will be able to remotely control digital outputs --- 支持用户远程控制数字输出GPIO
 
 ## data flow mirroring
-+ ablity to mirror the data flow to a second back-up server.
++ ablity to mirror the data flow to a second back-up server. --- 备用服务器进行数据备份。
 
 ## accelerometer --- “six degrees of motion detection”
-+ be able to detect motion during ignition on/off state
-+ be able to provide raw accelerometer samples at regular intervals.
-* able to wake up device from sleep mode to full power mode"need to be able to tune this feature sensitivity"
-* Ability to adjust/tune accelerometer sensitivity so that driver behavior parameters can be set to capture “hard breaking, acceleration, hard turns, impacts, etc
-* Always store last 30 seconds of accelerometer data so historical data can be retrieved by system
++ be able to detect motion during ignition on/off state ---检测汽车运动状态。
++ be able to provide raw accelerometer samples at regular intervals. --- 规定间隔内原始加速数据采样。
+* able to wake up device from sleep mode to full power mode"need to be able to tune this feature sensitivity" --- 从睡眠模式唤醒到最大功率模式。
+* Ability to adjust/tune accelerometer sensitivity so that driver behavior parameters can be set to capture “hard breaking, acceleration, hard turns, impacts, etc --- 动态调整加计灵敏度，以支持运动数据检测。
+* Always store last 30 seconds of accelerometer data so historical data can be retrieved by system --- 保存前30秒加速度数据，用于系统追溯。
 
 ## device installation
-+ device have one LED to indicate cell signal and one LED to indicat GPS signal
-+ blink while seraching, solid when signal confirmed.
-* Ability to toggle LED’s on or off to save power but not affect device state or preperformance
++ device have one LED to indicate cell signal and one LED to indicat GPS signal --- 网络和GPS用不同的LED指示。
++ blink while seraching, solid when signal confirmed. --- 信号检测时慢闪。
+* Ability to toggle LED’s on or off to save power but not affect device state or preperformance --- 在不影响系统状态和性能的前提下转换LED状态。
