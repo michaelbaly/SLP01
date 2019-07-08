@@ -56,9 +56,9 @@ MODULE_DEPENDS_INC="./src/modules_depend/inc"
 DAM_LIBNAME="txm_lib.lib"
 TIMER_LIBNAME="timer_dam_lib.lib"
 
-DAM_ELF_NAME="atel_BG96_$1.elf"
-DAM_TARGET_BIN="atel_BG96_$1.bin"
-DAM_TARGET_MAP="atel_BG96_$1.map"
+DAM_ELF_NAME="atel_slp01_$1.elf"
+DAM_TARGET_BIN="atel_slp01_$1.bin"
+DAM_TARGET_MAP="atel_slp01_$1.map"
 
 if [ ! -d $DAM_OUTPUT_PATH ]; then
     mkdir $DAM_OUTPUT_PATH

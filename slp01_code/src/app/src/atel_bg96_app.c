@@ -352,7 +352,7 @@ void gps_cb_timer(uint32_t data)
 {
     if(0x11 == data) /* specified when define attr of timer */
     {
-    	/* write gps log to file */
+    	/* write gps location to log file */
     }
 }
 
@@ -400,7 +400,7 @@ int gps_loc_log_write(void)
   Show location info.
 */
 
-void gps_loc_file_timer_init()
+void gps_loc_timer_init()
 {
 	int status = 0xff;
 	memset(&timer_def_attr, 0, sizeof(timer_def_attr));
