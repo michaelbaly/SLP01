@@ -483,6 +483,32 @@ void gps_loc_log_init()
 
 }
 
+int ota_service_start(void)
+{
+	return;
+}
+
+void system_init(void)
+{
+	/* tcp service init */
+
+	/* gps init */
+
+	
+	return;
+}
+
+boolean vehicle_motion_detect(void)
+{
+	/*  */
+	return;
+}
+
+void gps_loc_timer_start()
+{
+	return;
+}
+
 /*
 @func
   quectel_task_entry
@@ -492,113 +518,23 @@ void gps_loc_log_init()
 /*=========================================================================*/
 int quectel_task_entry(void)
 {
-	
-    uint32 signal = 0;
-    int32 status = -1;
-	
-    /* lat&long update interval: 1 sec */
-    qapi_Location_Options_t Location_Options = {sizeof(qapi_Location_Options_t), 
-    											LAT_LONG_UPDATE_FREQ, 
-    											0};
-    /* delay for the device startup */
-    qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_SEC, true);
+	boolean ig_status = FALSE;
+	/* OTA service start */
+	ota_service_start();
 
-	/* uart init */
-    uart_init();
-	uart_recv();
-	qt_uart_dbg("ATEL ---> BG96 application entry");
+	/* system init */
+	system_init();
 
-    #ifdef ATEL_GPS_LAN_POWER_ON
-	/* GPIO_04 output high so that GPS module will work properly for MM16 */
-	mm16_lan_power_on(PIN_E_GPIO_04);
-	#endif
+	/* vehicle motion detect */
+	ig_status = vehicle_motion_detect();
 	
-	/* start tcp client service */
-	//atel_tcpclient_start(); ---> tcp client will block here, we replace it with subtask
-	
-    /* allocate resources for each task */
-	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&tcpclient_task_config.module_thread_handle, sizeof(TX_THREAD))) 
+	while(ig_status)
 	{
-		qt_uart_dbg("[task_create] txm_module_object_allocate failed ~");
-		return - 1;
-	}
+		/* report init location */
 
-	/* create the subtask step by step */
-	status = tx_thread_create(tcpclient_task_config.module_thread_handle,
-						   tcpclient_task_config.module_task_name,
-						   tcpclient_task_config.module_task_entry,
-						   NULL,
-						   tcpclient_task_config.module_thread_stack,
-						   tcpclient_task_config.stack_size,
-						   tcpclient_task_config.stack_prior,
-						   tcpclient_task_config.stack_prior,
-						   TX_NO_TIME_SLICE,
-						   TX_AUTO_START
-						   );
-	      
-	if(status != TX_SUCCESS)
-	{
-		qt_uart_dbg("[task_create] : Thread creation failed");
+		/* update gps loc via timer */
+		gps_loc_timer_init();
 	}
-	
-
-	/* create handler for gps file callback */
-	tx_event_flags_create(&gps_file_handle, "gps file handle");
-
-	/* init file system for gps module */
-	gps_loc_log_init();
-    
-	/* init gps */
-    location_init();
-	
-	/* start location tracking */
-    qapi_Loc_Start_Tracking(loc_clientid, &Location_Options, &gps_tracking_id);
-	tx_event_flags_get(&gps_signal_handle, 
-					   LOCATION_TRACKING_RSP_OK_BIT|LOCATION_TRACKING_RSP_FAIL_BIT, 
-		               TX_OR_CLEAR, 
-		               &signal, 
-		               TX_WAIT_FOREVER);
-	/* respond callback has been triggered */
-	if(signal&LOCATION_TRACKING_RSP_OK_BIT)
-	{
-		qt_uart_dbg("wating for tracking...");
-	}
-	else if(signal&LOCATION_TRACKING_RSP_FAIL_BIT)
-	{
-		qt_uart_dbg("start tracking failed");
-		location_deinit();
-		return -1;
-	}
-
-	/* save loc info once got the signal  */
-	while(1)
-	{
-		tx_event_flags_get(&gps_signal_handle, LOCATION_GPS_LOG_FILE_BIT, TX_OR_CLEAR, &signal, TX_WAIT_FOREVER);
-		/* light up external led to indicate write log */
-		atel_led_on(g_gpio_pin_num);
-		
-		if(signal & LOCATION_GPS_LOG_FILE_BIT)
-		{
-		
-			#ifdef ATEL_DEBUG
-			location_info_show();
- 			#endif
-			status = gps_loc_log_write();
-			if(LOC_SAVE_OK != status)
-			{
-				qt_uart_dbg("write gps location failed");
-			}
-			else
-			{
-			    qapi_Timer_Sleep(5, QAPI_TIMER_UNIT_SEC, true);
-				atel_led_off(g_gpio_pin_num);
-			}
-
-			/* clear globle var location */
-			memset(loc_trans_buffer, '\0', sizeof(loc_trans_buffer));
-		}
-	}
-	
 }
 
 #endif /*__EXAMPLE_BG96_APP__*/

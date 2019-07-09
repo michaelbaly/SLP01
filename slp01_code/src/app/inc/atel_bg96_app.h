@@ -52,7 +52,7 @@ typedef struct TASK_COMM_S{
 }TASK_MSG;
 
 void loc_info_transform(qapi_Location_t location, char* trans_buf);
-
+int ota_service_start(void);
 
 extern	int atel_tcpclient_start(void);
 extern  int atel_led_on(MODULE_PIN_ENUM m_pin);
