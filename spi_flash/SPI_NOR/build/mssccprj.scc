@@ -1,9 +1,0 @@
-SCC = This is a Source Code Control file
-
-[SPI_NOR.mak]
-SCC_Aux_Path = "\\Atelengserver\SoftwareSvr\Software\ATEL_MARVELL"
-SCC_Project_Name = "$/ATEL_MARVELL/CP_2.161.001_LWG/mcu_dongle/hal/SPI_NOR/build", IRQNAAAA
-
-[SPI_NOR_dep.mak]
-SCC_Aux_Path = "\\Atelengserver\SoftwareSvr\Software\ATEL_MARVELL"
-SCC_Project_Name = "$/ATEL_MARVELL/CP_2.161.001_LWG/mcu_dongle/hal/SPI_NOR/build", IRQNAAAA

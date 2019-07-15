@@ -59,7 +59,7 @@ static uint32 gps_tracking_id;
 
 static int timer_count = 0;
 
-
+static boolean normal_start = 0;
 
 char tcp_send_buffer[256] = {0};
 static char loc_trans_buffer[256] = {0};
@@ -491,6 +491,7 @@ int ota_service_start(void)
 void system_init(void)
 {
 	/* tcp service init */
+	
 
 	/* gps init */
 
@@ -509,6 +510,40 @@ void gps_loc_timer_start()
 	return;
 }
 
+
+void loc_report()
+{
+	
+}
+
+IG_ON_RUNNING_MODE check_running_mode(char *cfg_path)
+{
+	int fd = -1;
+	int status = 0xff;
+	char file_buff[10] = {0};
+	uint32 rd_bytes = 0;
+	
+	qapi_FS_Open(cfg_path, QAPI_FS_O_RDONLY_E , &fd);
+	status = qapi_FS_Read(fd, (uint8*)file_buff, sizeof(file_buff), &rd_bytes)
+	/* watch mode */
+	if (strncasecmp(file_buff, "watch", rd_bytes) == 0)
+	{
+		return IG_ON_WATCH_M;
+	}
+	else if (strncasecmp(file_buff, "theft", rd_bytes) == 0)
+	{
+		return IG_ON_THEFT_M;
+	}
+	/* otherwise */
+	else
+	{
+		/* use the default mode */
+		return IG_ON_DEFAULT_M
+	}
+	return IG_ON_INVALID_M;
+}
+
+
 /*
 @func
   quectel_task_entry
@@ -518,18 +553,36 @@ void gps_loc_timer_start()
 /*=========================================================================*/
 int quectel_task_entry(void)
 {
-	boolean ig_status = FALSE;
+	boolean cur_ig_status = FALSE;
+	boolean last_ig_status = FALSE;
+	IG_ON_RUNNING_MODE ig_on_mode = IG_ON_WATCH_M;
+
+	
 	/* OTA service start */
 	ota_service_start();
 
 	/* system init */
 	system_init();
 
-	/* vehicle motion detect */
-	ig_status = vehicle_motion_detect();
+	normal_start = TRUE;
+
 	
-	while(ig_status)
+	while(normal_start)
 	{
+		/* vehicle motion detect */
+		cur_ig_status = vehicle_motion_detect();
+
+		/* ignition off */
+		if(FALSE == cur_ig_status)
+		{
+			loc_report();
+		}
+		else 
+		{
+			/* mode detect */
+			ig_on_mode = check_running_mode();
+		}
+		
 		/* report init location */
 
 		/* update gps loc via timer */

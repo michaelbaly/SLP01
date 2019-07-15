@@ -51,6 +51,12 @@ typedef struct TASK_COMM_S{
 	CHAR buffer[32];
 }TASK_MSG;
 
+typedef enum {
+	IG_ON_WATCH_M = 0,
+	IG_ON_THEFT_M,
+	IG_ON_INVALID_M
+}IG_ON_RUNNING_MODE;
+
 void loc_info_transform(qapi_Location_t location, char* trans_buf);
 int ota_service_start(void);
 

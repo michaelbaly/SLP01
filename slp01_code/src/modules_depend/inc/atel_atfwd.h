@@ -16,6 +16,7 @@
 #define HIGH 1
 #define LOW 0
 #define FALSE 0
+#define TRUE
 typedef  unsigned char      boolean; 
 
 #include "qapi_tlmm.h"
