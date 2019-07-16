@@ -51,11 +51,21 @@ qapi_TIMER_set_attr_t timer_set_attr;
 
 #define LAT_LONG_UPDATE_FREQ 1000 /* UNIT:ms */
 
+/* begin: MSO feature */
+#define MSO_COUNTER_PRESET	5
+static char g_mso_counter = 0;
+
+/* end */
+
 
 static TX_EVENT_FLAGS_GROUP gps_signal_handle;
 static TX_EVENT_FLAGS_GROUP gps_file_handle;
 static uint32 gps_tracking_id;
 
+/* begin: for ignition status switch signal */
+static TX_EVENT_FLAGS_GROUP ig_switch_signal_handle;
+
+/* end */
 
 static int timer_count = 0;
 
@@ -73,6 +83,13 @@ subtask_config_t tcpclient_task_config ={
     NULL, "Atel Tcpclient Task Thread", atel_tcpclient_start, \
     atel_tcpclient_thread_stack, ATEL_TCPCLIENT_THREAD_STACK_SIZE, ATEL_TCPCLIENT_THREAD_PRIORITY
     
+};
+	
+subtask_config_t gps_task_config ={
+	
+	NULL, "Atel GPS Task Thread", atel_gps_start, \
+	atel_tcpclient_thread_stack, ATEL_TCPCLIENT_THREAD_STACK_SIZE, ATEL_TCPCLIENT_THREAD_PRIORITY
+	
 };
 
 
@@ -352,7 +369,7 @@ void gps_cb_timer(uint32_t data)
 {
     if(0x11 == data) /* specified when define attr of timer */
     {
-    	/* write gps location to log file */
+    	/* update gps loc */
     }
 }
 
@@ -416,7 +433,7 @@ void gps_loc_timer_init()
 
 	memset(&timer_set_attr, 0, sizeof(timer_set_attr));
 	timer_set_attr.reload = true; /* timer will reactive once expires */
-	timer_set_attr.time = 60;
+	timer_set_attr.time = 60; /* frequency we update the gps location */
 	timer_set_attr.unit = QAPI_TIMER_UNIT_SEC;
 	status = qapi_Timer_Set(timer_handle, &timer_set_attr);
 
@@ -488,21 +505,114 @@ int ota_service_start(void)
 	return;
 }
 
+void atel_gps_start(void)
+{
+	
+	uint32 signal = 0;
+
+	/* lat&long update interval: 1 sec */
+	qapi_Location_Options_t Location_Options = {sizeof(qapi_Location_Options_t), 
+												LAT_LONG_UPDATE_FREQ, 
+
+	/* gps service init */											0};
+	location_init();
+
+	/* start location tracking */
+	qapi_Loc_Start_Tracking(loc_clientid, &Location_Options, &gps_tracking_id);
+	tx_event_flags_get(&gps_signal_handle, 
+					   LOCATION_TRACKING_RSP_OK_BIT|LOCATION_TRACKING_RSP_FAIL_BIT, 
+					   TX_OR_CLEAR, 
+					   &signal, 
+					   TX_WAIT_FOREVER);
+	/* respond callback has been triggered */
+	if(signal&LOCATION_TRACKING_RSP_OK_BIT)
+	{
+		qt_uart_dbg("wating for tracking...");
+	}
+	else if(signal&LOCATION_TRACKING_RSP_FAIL_BIT)
+	{
+		qt_uart_dbg("start tracking failed");
+		location_deinit();
+		return -1;
+	}
+
+	return;
+}
+
+void tcp_service_start(void)
+{
+    int32 status = -1;
+	
+	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&tcpclient_task_config.module_thread_handle, sizeof(TX_THREAD))) 
+	{
+		qt_uart_dbg("[task_create] txm_module_object_allocate failed ~");
+		return - 1;
+	}
+
+	/* create the subtask step by step */
+	status = tx_thread_create(tcpclient_task_config.module_thread_handle,
+					   tcpclient_task_config.module_task_name,
+					   tcpclient_task_config.module_task_entry,
+					   NULL,
+					   tcpclient_task_config.module_thread_stack,
+					   tcpclient_task_config.stack_size,
+					   tcpclient_task_config.stack_prior,
+					   tcpclient_task_config.stack_prior,
+					   TX_NO_TIME_SLICE,
+					   TX_AUTO_START
+					   );
+	  
+	if(status != TX_SUCCESS)
+	{
+		qt_uart_dbg("[task_create] : Thread creation failed");
+	}
+
+	return;
+}
+
+void gps_service_start(void)
+{
+	
+}
 void system_init(void)
 {
-	/* tcp service init */
+
+	/* tcp service bring up */
+	tcp_service_start();
 	
-
-	/* gps init */
-
+	/* gps service bring up */
+    gps_service_start();
 	
 	return;
 }
 
-boolean vehicle_motion_detect(void)
+char vehicle_motion_detect(void)
 {
-	/*  */
-	return;
+	int sig_mask = IG_SWITCH_OFF_E | IG_SWITCH_ON_E;
+	ULONG switch_event = 0;
+	boolean ig_status = 0xff;
+	
+	/* DO1 status check */
+	ig_status = gpio_read();
+
+	/* get signal from ig_on flow or ig_off flow */
+	tx_event_flags_get(&ig_switch_signal_handle, sig_mask, TX_OR, &switch_event, TX_NO_WAIT);
+	
+	/* swtich from off to on */
+	if (switch_event&IG_SWITCH_ON_E)
+	{	
+		/* clear the switch on bit */
+		
+		return SWITCH_ON;
+	}
+	/* switch from on to off */
+	else if (switch_event&IG_SWITCH_OFF_E)
+	{
+		/* clear the switch off bit */
+		
+		return SWITCH_OFF;
+	}
+	return ig_status;
 }
 
 void gps_loc_timer_start()
@@ -511,12 +621,22 @@ void gps_loc_timer_start()
 }
 
 
-void loc_report()
+void loc_report(boolean    update_flag)
 {
-	
+	/* get loc info from gps module */
+
+	/* send loc to TCP client's normal queue */
+	qapi_send(int32_t handle, char * buf, int32_t len, int32_t flags);
+
+	if(update_flag == TRUE)
+	{
+		/* start the timer to update the loc */
+		gps_loc_timer_init();
+	}
 }
 
-IG_ON_RUNNING_MODE check_running_mode(char *cfg_path)
+
+IG_ON_RUNNING_MODE_E check_running_mode(char *cfg_path)
 {
 	int fd = -1;
 	int status = 0xff;
@@ -543,6 +663,46 @@ IG_ON_RUNNING_MODE check_running_mode(char *cfg_path)
 	return IG_ON_INVALID_M;
 }
 
+void MSO_enable(void)
+{
+	/* init mso counter */
+    g_mso_counter = MSO_COUNTER_PRESET;
+
+	
+	return;
+}
+
+void ig_off_process()
+{
+	/* whether enable MSO feature or not */
+	if(motion_status && cell_coverage && gps_fix_valid)
+	{
+		/* report gps location */
+		loc_report();
+		if(OK == engine_starter_disable())
+		{
+			MSO_enable();
+		}
+	}
+	/* send signal to main task when ignition status switch to ignition on */
+	if (HIGH == gpio_read(DIG_OUTPUT1))
+	{
+		tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_ON_E, TX_OR);
+	}
+	
+	return ;
+}
+
+void ig_on_process()
+{
+	/* send signal to main task when ignition status switch to ignition Off */
+	if (LOW == gpio_read(DIG_OUTPUT1))
+	{
+		tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_OFF_E, TX_OR);
+	}
+	
+	return;
+}
 
 /*
 @func
@@ -555,7 +715,7 @@ int quectel_task_entry(void)
 {
 	boolean cur_ig_status = FALSE;
 	boolean last_ig_status = FALSE;
-	IG_ON_RUNNING_MODE ig_on_mode = IG_ON_WATCH_M;
+	IG_ON_RUNNING_MODE_E ig_on_mode = IG_ON_WATCH_M;
 
 	
 	/* OTA service start */
@@ -565,7 +725,9 @@ int quectel_task_entry(void)
 	system_init();
 
 	normal_start = TRUE;
-
+	/* create signal handler to receive  */
+	tx_event_flags_create(&ig_switch_signal_handle, "ignition status tracking");
+	tx_event_flags_set(&ig_switch_signal_handle, 0x0, TX_AND);
 	
 	while(normal_start)
 	{
@@ -575,18 +737,20 @@ int quectel_task_entry(void)
 		/* ignition off */
 		if(FALSE == cur_ig_status)
 		{
-			loc_report();
+			ig_off_process();
 		}
 		else 
 		{
 			/* mode detect */
 			ig_on_mode = check_running_mode();
+			ig_on_process(ig_on_mode);
 		}
-		
-		/* report init location */
 
-		/* update gps loc via timer */
-		gps_loc_timer_init();
+		/* alarm and event report*/
+		
+
+		/* store last ig status */
+		last_ig_status = cur_ig_status;
 	}
 }
 

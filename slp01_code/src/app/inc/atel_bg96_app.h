@@ -55,7 +55,20 @@ typedef enum {
 	IG_ON_WATCH_M = 0,
 	IG_ON_THEFT_M,
 	IG_ON_INVALID_M
-}IG_ON_RUNNING_MODE;
+}IG_ON_RUNNING_MODE_E;
+
+/* begin: ig status switch event*/
+typedef  unsigned char      boolean; 
+#define SWITCH_ON	1
+#define SWITCH_OFF	0
+#define NO_SWITCH	-1
+
+#define SHIFT_L(n) (1UL<<n)
+typedef enum {
+	IG_SWITCH_ON_E = SHIFT_L(0),
+	IG_SWITCH_OFF_E = SHIFT_L(1),
+}IG_SWITCH_STATUS_E;
+/* end */
 
 void loc_info_transform(qapi_Location_t location, char* trans_buf);
 int ota_service_start(void);
