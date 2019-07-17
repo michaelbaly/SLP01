@@ -82,6 +82,14 @@ typedef enum DSS_SIG_EVENTS
 	DSS_SIG_EVT_MAX_E		= LEFT_SHIFT_OP(5)
 } DSS_Signal_Evt_e;
 
+typedef struct TASK_COMM_S{
+	int msg_id;
+	int dat;
+	CHAR name[16];
+	CHAR buffer[32];
+}TASK_MSG;
+
+
 /*===========================================================================
                              DECLARATION
 ===========================================================================*/

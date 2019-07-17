@@ -94,88 +94,29 @@ qapi_UART_Handle_t tcp_dbg_uart_handler;
 //static char tcp_send_buffer[128] = {0};
 //static char uart_rx_buffer[128];
 //static int g_atel_sockfd = -1;
+
+
+/*===========================================================================
+define three queue: 
+normal queue: for gps location report
+alarm  queue: for alarm report, with higher priority
+event  queue: for event report, with lower priority
+===========================================================================*/
+#define QT_Q_MAX_INFO_NUM		16
+
+static TX_QUEUE tcp_normal_queue_handle;
+static TX_QUEUE tcp_alarm_queue_handle;
+static TX_QUEUE tcp_event_queue_handle;
+
+static TASK_MSG task_comm[QT_Q_MAX_INFO_NUM];
+
+
+
+
+
 /*===========================================================================
                                FUNCTION
 ===========================================================================*/
-#if 0
-/*
-@func
-  uart_rx_cb
-@brief
-  uart rx callback handler.
-*/
-static void uart_rx_cb(uint32_t num_bytes, void *cb_data)
-{
-    int send_len = -1;
-
-	if(num_bytes == 0)
-	{
-		qapi_UART_Receive(tcp_dbg_uart_handler, uart_rx_buffer, sizeof(uart_rx_buffer), NULL);
-		return;
-	}
-	else if(num_bytes >= strlen(uart_rx_buffer))
-	{
-		num_bytes = strlen(uart_rx_buffer);
-	}
-
-	qt_uart_dbg("num_bytes: [%d]\n", num_bytes);
-
-	memcpy(tcp_send_buffer, uart_rx_buffer, num_bytes);
-	memset(uart_rx_buffer, 0, sizeof(uart_rx_buffer));
-
-	send_len = qapi_send(g_atel_sockfd, tcp_send_buffer, strlen(tcp_send_buffer), 0);
-    if(send_len > 0)
-    {
-        qt_uart_dbg("tcp_send_buffer @send: %s, @len: %d\n", tcp_send_buffer, strlen(tcp_send_buffer));
-		memset(tcp_send_buffer, 0, sizeof(tcp_send_buffer));
-    }
-
-	qapi_UART_Receive(tcp_dbg_uart_handler, uart_rx_buffer, sizeof(uart_rx_buffer), NULL);
-
-}
-
-void tcp_uart_dbg_init(void)
-{
-	qapi_Status_t status;
-	qapi_UART_Open_Config_t uart_cfg;
-
-	uart_cfg.baud_Rate			= 115200;
-	uart_cfg.enable_Flow_Ctrl	= QAPI_FCTL_OFF_E;
-	uart_cfg.bits_Per_Char		= QAPI_UART_8_BITS_PER_CHAR_E;
-	uart_cfg.enable_Loopback	= 0;
-	uart_cfg.num_Stop_Bits		= QAPI_UART_1_0_STOP_BITS_E;
-	uart_cfg.parity_Mode		= QAPI_UART_NO_PARITY_E;
-	uart_cfg.rx_CB_ISR			= (qapi_UART_Callback_Fn_t)&uart_rx_cb;
-	uart_cfg.tx_CB_ISR			= NULL;
-
-	status = qapi_UART_Open(&tcp_dbg_uart_handler, QAPI_UART_PORT_002_E, &uart_cfg);
-	if (QAPI_OK != status)
-	{
-		return;
-	}
-	
-	status = qapi_UART_Power_On(tcp_dbg_uart_handler);
-	if (QAPI_OK != status)
-	{
-		return;
-	}
-
-	qapi_UART_Receive(tcp_dbg_uart_handler, uart_rx_buffer, sizeof(uart_rx_buffer), NULL);
-}
-
-void tcp_uart_debug_print(const char* fmt, ...) 
-{
-	va_list arg_list;
-
-	va_start(arg_list, fmt);
-    vsnprintf((char *)(quec_dbg_buffer), sizeof(quec_dbg_buffer), (char *)fmt, arg_list);
-    va_end(arg_list);
-		
-	qapi_UART_Transmit(tcp_dbg_uart_handler, quec_dbg_buffer, strlen(quec_dbg_buffer), NULL);
-	qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_MSEC, true);
-}
-#endif
-
 /*
 @func
 	dss_net_event_cb
@@ -525,11 +466,27 @@ void quec_dataservice_thread(ULONG param)
 
 static int start_tcp_session(void)
 {
+	qapi_Status_t retval = QAPI_ERROR;
 	int  sock_fd = -1;
 	int  sent_len = 0;
 	int  recv_len = 0;
 	char buff[SENT_BUF_SIZE];
 	struct sockaddr_in client_addr;
+
+	/* begin: create msg queue */
+    retval = tx_queue_create(&tcp_normal_queue_handle,
+							 "gps loc report",
+							 TX_16_ULONG,
+							 task_comm,
+							 QT_Q_MAX_INFO_NUM *sizeof(TASK_MSG)
+							 );
+	
+    if (TX_SUCCESS != retval)
+    {
+    	//qt_uart_dbg(uart1_conf.hdlr, "tx_queue_create failed with status %d", retval);
+    }
+
+	/* end: create msg queue */
 
 	do
 	{
@@ -607,7 +564,7 @@ static int start_tcp_session(void)
 @brief
 	The entry of data service task.
 */
-int atel_tcpclient_start(void)
+int atel_tcpclient_entry(void)
 {
 
 	int ret = 0;

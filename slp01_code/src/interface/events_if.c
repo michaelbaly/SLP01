@@ -49,6 +49,18 @@ void events_report(EVENTS_T type, int report_flag)
 	return;
 }
 
+/*
+@func
+  alarms_report
+@brief
+  report events based on event type
+*/
+void alarms_report(EVENTS_T type, int report_flag)
+{
+	return;
+}
+
+
 #endif /*__EXAMPLE_BG96_APP__*/
 
 

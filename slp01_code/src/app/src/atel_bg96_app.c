@@ -17,6 +17,7 @@
 #include "quectel_utils.h"
 #include "quectel_uart_apis.h"
 #include "atel_bg96_app.h"
+#include "events_if.h"
 
 
 
@@ -31,8 +32,9 @@ qapi_TIMER_handle_t timer_handle;
 qapi_TIMER_define_attr_t timer_def_attr;
 qapi_TIMER_set_attr_t timer_set_attr;
 
-#define ATEL_GPS_LOCATION_DIR_PATH		"/datatx/atel_gps"
-#define ATEL_GPS_LOCATION_LOG_FILE		"/datatx/atel_gps/gps.log"
+#define ATEL_GPS_LOCATION_DIR_PATH				"/datatx/atel_gps"
+#define ATEL_GPS_LOCATION_LOG_FILE				"/datatx/atel_gps/gps.log"
+#define ATEL_IG_ON_RUNNING_MODE_CFG_FILE		"/datatx/ig_mode_cfg"
 /**************************************************************************
 *                                 GLOBAL
 ***************************************************************************/
@@ -49,7 +51,7 @@ qapi_TIMER_set_attr_t timer_set_attr;
 #define LOC_SAVE_OK		0
 #define LOC_SAVE_ERR	-1
 
-#define LAT_LONG_UPDATE_FREQ 1000 /* UNIT:ms */
+#define LAT_LONG_UPDATE_FREQ 15000 /* UNIT:ms */
 
 /* begin: MSO feature */
 #define MSO_COUNTER_PRESET	5
@@ -67,6 +69,7 @@ static TX_EVENT_FLAGS_GROUP ig_switch_signal_handle;
 
 /* end */
 
+
 static int timer_count = 0;
 
 static boolean normal_start = 0;
@@ -80,17 +83,25 @@ MODULE_PIN_ENUM  g_gpio_pin_num = PIN_E_GPIO_20;
 
 subtask_config_t tcpclient_task_config ={
     
-    NULL, "Atel Tcpclient Task Thread", atel_tcpclient_start, \
+    NULL, "Atel Tcpclient Task Thread", atel_tcpclient_entry, \
     atel_tcpclient_thread_stack, ATEL_TCPCLIENT_THREAD_STACK_SIZE, ATEL_TCPCLIENT_THREAD_PRIORITY
     
 };
 	
 subtask_config_t gps_task_config ={
 	
-	NULL, "Atel GPS Task Thread", atel_gps_start, \
-	atel_tcpclient_thread_stack, ATEL_TCPCLIENT_THREAD_STACK_SIZE, ATEL_TCPCLIENT_THREAD_PRIORITY
+	NULL, "Atel GPS Task Thread", atel_gps_entry, \
+	atel_gps_thread_stack, ATEL_GPS_THREAD_STACK_SIZE, ATEL_GPS_THREAD_PRIORITY
 	
 };
+
+subtask_config_t mdm_ble_at_config ={
+	
+	NULL, "Atel MDM_COM_BLE Task Thread", atel_mdm_ble_entry, \
+	atel_at_frame_thread_stack, ATEL_AT_FRAME_THREAD_STACK_SIZE, ATEL_AT_FRAME_THREAD_PRIORITY
+	
+};
+
 
 
 
@@ -156,6 +167,28 @@ static void location_tracking_callback(qapi_Location_t loc)
 		}
 
     }    
+}
+
+
+/*
+@func
+  atel_dbg_print
+@brief
+  Output the debug log to main uart. 
+*/
+void atel_dbg_print(const char* fmt, ...)
+{
+	char log_buf[256] = {0};
+
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(log_buf, sizeof(log_buf), fmt, ap);
+	va_end(ap);
+
+	qapi_atfwd_send_urc_resp("ATEL", log_buf);
+	qapi_Timer_Sleep(50, QAPI_TIMER_UNIT_MSEC, true);
+
+	return;
 }
 
 
@@ -505,41 +538,8 @@ int ota_service_start(void)
 	return;
 }
 
-void atel_gps_start(void)
-{
-	
-	uint32 signal = 0;
 
-	/* lat&long update interval: 1 sec */
-	qapi_Location_Options_t Location_Options = {sizeof(qapi_Location_Options_t), 
-												LAT_LONG_UPDATE_FREQ, 
-
-	/* gps service init */											0};
-	location_init();
-
-	/* start location tracking */
-	qapi_Loc_Start_Tracking(loc_clientid, &Location_Options, &gps_tracking_id);
-	tx_event_flags_get(&gps_signal_handle, 
-					   LOCATION_TRACKING_RSP_OK_BIT|LOCATION_TRACKING_RSP_FAIL_BIT, 
-					   TX_OR_CLEAR, 
-					   &signal, 
-					   TX_WAIT_FOREVER);
-	/* respond callback has been triggered */
-	if(signal&LOCATION_TRACKING_RSP_OK_BIT)
-	{
-		qt_uart_dbg("wating for tracking...");
-	}
-	else if(signal&LOCATION_TRACKING_RSP_FAIL_BIT)
-	{
-		qt_uart_dbg("start tracking failed");
-		location_deinit();
-		return -1;
-	}
-
-	return;
-}
-
-void tcp_service_start(void)
+char tcp_service_start(void)
 {
     int32 status = -1;
 	
@@ -572,8 +572,64 @@ void tcp_service_start(void)
 
 void gps_service_start(void)
 {
+	int32 status = -1;
 	
+	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&gps_task_config.module_thread_handle, sizeof(TX_THREAD))) 
+	{
+		qt_uart_dbg("[task_create] txm_module_object_allocate failed ~");
+		return - 1;
+	}
+
+	/* create the subtask step by step */
+	status = tx_thread_create(gps_task_config.module_thread_handle,
+					   gps_task_config.module_task_name,
+					   gps_task_config.module_task_entry,
+					   NULL,
+					   gps_task_config.module_thread_stack,
+					   gps_task_config.stack_size,
+					   gps_task_config.stack_prior,
+					   gps_task_config.stack_prior,
+					   TX_NO_TIME_SLICE,
+					   TX_AUTO_START
+					   );
+	  
+	if(status != TX_SUCCESS)
+	{
+		qt_uart_dbg("[task_create] : Thread creation failed");
+	}
 }
+
+void bg96_com_ble_task(void)
+{
+	
+	int32 status = -1;
+
+	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&mdm_ble_at_config.module_thread_handle, sizeof(TX_THREAD))) 
+	{
+		qt_uart_dbg("[task_create] txm_module_object_allocate failed ~");
+		return - 1;
+	}
+
+	/* create the subtask step by step */
+	status = tx_thread_create(mdm_ble_at_config.module_thread_handle,
+					   mdm_ble_at_config.module_task_name,
+					   mdm_ble_at_config.module_task_entry,
+					   NULL,
+					   mdm_ble_at_config.module_thread_stack,
+					   mdm_ble_at_config.stack_size,
+					   mdm_ble_at_config.stack_prior,
+					   mdm_ble_at_config.stack_prior,
+					   TX_NO_TIME_SLICE,
+					   TX_AUTO_START
+					   );
+	  
+	if(status != TX_SUCCESS)
+	{
+		qt_uart_dbg("[task_create] : Thread creation failed");
+	}
+}
+
+
 void system_init(void)
 {
 
@@ -586,7 +642,7 @@ void system_init(void)
 	return;
 }
 
-char vehicle_motion_detect(void)
+char vehicle_ignition_detect(void)
 {
 	int sig_mask = IG_SWITCH_OFF_E | IG_SWITCH_ON_E;
 	ULONG switch_event = 0;
@@ -625,7 +681,7 @@ void loc_report(boolean    update_flag)
 {
 	/* get loc info from gps module */
 
-	/* send loc to TCP client's normal queue */
+	/* loc to TCP client's normal queue */
 	qapi_send(int32_t handle, char * buf, int32_t len, int32_t flags);
 
 	if(update_flag == TRUE)
@@ -695,12 +751,164 @@ void ig_off_process()
 
 void ig_on_process()
 {
+	/* driving behavior detect */
+	drv_bhav_detect();
+
+	/* set alarm or event bit if condition met */
+	
+	
 	/* send signal to main task when ignition status switch to ignition Off */
 	if (LOW == gpio_read(DIG_OUTPUT1))
 	{
 		tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_OFF_E, TX_OR);
 	}
 	
+	return;
+}
+
+void alarm_event_process(void)
+{
+	/* check alarm first */
+
+    /* check event */
+
+	return;
+}
+
+void gpio_dir_control(MODULE_PIN_ENUM pin_num, qapi_GPIO_Direction_t direction)
+{
+	gpio_config(pin_num, direction, QAPI_GPIO_NO_PULL_E, QAPI_GPIO_2MA_E);	
+}
+
+void gpio_value_control(MODULE_PIN_ENUM pin_num, boolean vaule)
+{
+
+	if(vaule)
+		qapi_TLMM_Drive_Gpio(gpio_id_tbl[pin_num], gpio_map_tbl[pin_num].gpio_id, QAPI_GPIO_HIGH_VALUE_E);
+	else
+		qapi_TLMM_Drive_Gpio(gpio_id_tbl[pin_num], gpio_map_tbl[pin_num].gpio_id, QAPI_GPIO_LOW_VALUE_E);
+}
+
+
+void gpio_init(void)
+{
+	//config gpio direction
+	gpio_dir_control(PIN_E_GPIO_01,QAPI_GPIO_INPUT_E);  //charge_DET
+	gpio_dir_control(PIN_E_GPIO_02,QAPI_GPIO_OUTPUT_E); //MDM_LDO_EN
+	gpio_dir_control(PIN_E_GPIO_04,QAPI_GPIO_OUTPUT_E); //LNA_Power_EN
+	gpio_dir_control(PIN_E_GPIO_05,QAPI_GPIO_INPUT_E);  //WAKEUP_IN
+	gpio_dir_control(PIN_E_GPIO_09,QAPI_GPIO_OUTPUT_E); //WAKE_BLE
+	gpio_dir_control(PIN_E_GPIO_19,QAPI_GPIO_OUTPUT_E); //GREEN_LED
+	gpio_dir_control(PIN_E_GPIO_20,QAPI_GPIO_OUTPUT_E); //BLUE_LED
+	//gpio_dir_control(PIN_E_GPIO_21,QAPI_GPIO_INPUT_E); //ACC_INT2
+
+	//set default value for gpio	
+	gpio_value_control(PIN_E_GPIO_02, HIGH);
+	gpio_value_control(PIN_E_GPIO_04, HIGH);
+	gpio_value_control(PIN_E_GPIO_05, HIGH);
+	gpio_value_control(PIN_E_GPIO_09, HIGH);
+	gpio_value_control(PIN_E_GPIO_19, HIGH);
+	gpio_value_control(PIN_E_GPIO_20, HIGH);
+	//gpio_value_control(PIN_E_GPIO_21, TRUE);
+
+	// output debug info to main uart1
+	atel_dbg_print("gpio config to default value!\n");
+	
+}
+
+/* begin: uart depend functions */
+/*
+@func
+  uart_uart_rx_cb
+@brief
+  uart rx callback handler.
+*/
+static void uart_rx_cb_at(uint32_t num_bytes, void *cb_data)
+{
+	QT_UART_CONF_PARA *uart_conf = (QT_UART_CONF_PARA*)cb_data;
+	TASK_MSG rxcb;
+
+	qapi_Status_t status;
+	
+	atel_dbg_print("[get raw data from BLE tx] uart_conf->rx_buff %d@len,%s@string",uart_conf->rx_len,uart_conf->rx_buff);
+		
+	if(num_bytes == 0)
+	{
+		uart_recv(uart_conf);
+		return;
+	}
+	else if(num_bytes >= uart_conf->rx_len)
+	{
+		num_bytes = uart_conf->rx_len;
+	}
+	
+	uart_recv(uart_conf);
+	
+	/* uart2_conf->rx_buff store the tx data from BLE */
+	memcpy(&at_cmd_rsp[strlen(at_cmd_rsp)],uart_conf->rx_buff,num_bytes);
+	
+	atel_dbg_print("[get respond from BLE tx] uart_conf->rx_buff %d@len,%s@string",uart_conf->rx_len,uart_conf->rx_buff);
+
+	status = tx_queue_send(&tx_queue_handle, &rxcb,TX_WAIT_FOREVER );
+	if (TX_SUCCESS != status)
+	{
+		//qt_uart_dbg(uart1_conf.hdlr, "[task_create 1 ] tx_queue_send failed with status %d", status);
+	}
+}
+
+
+void uart_init_at(QT_UART_CONF_PARA *uart_conf)
+{
+	//qapi_Status_t status;
+	qapi_UART_Open_Config_t uart_cfg;
+	QAPI_Flow_Control_Type uart_fc_type = QAPI_FCTL_OFF_E;
+
+	uart_cfg.baud_Rate			= uart_conf->baudrate;
+	uart_cfg.enable_Flow_Ctrl	= QAPI_FCTL_OFF_E;
+	uart_cfg.bits_Per_Char		= QAPI_UART_8_BITS_PER_CHAR_E;
+	uart_cfg.enable_Loopback 	= 0;
+	uart_cfg.num_Stop_Bits		= QAPI_UART_1_0_STOP_BITS_E;
+	uart_cfg.parity_Mode 		= QAPI_UART_NO_PARITY_E;
+	uart_cfg.rx_CB_ISR			= (qapi_UART_Callback_Fn_t)&uart_rx_cb_at;
+	uart_cfg.tx_CB_ISR			= NULL;
+
+	qapi_UART_Open(&uart_conf->hdlr, uart_conf->port_id, &uart_cfg);
+
+	qapi_UART_Power_On(uart_conf->hdlr);
+
+	qapi_UART_Ioctl(uart_conf->hdlr, QAPI_SET_FLOW_CTRL_E, &uart_fc_type);
+}
+
+void uart_deinit_at(QT_UART_CONF_PARA *uart_conf)
+{
+	qapi_UART_Close(uart_conf->hdlr);
+
+	qapi_UART_Power_Off(uart_conf->hdlr);
+
+	return; 
+}
+
+
+/*
+@func
+  uart_recv
+@brief
+  Start a uart receive action.
+*/
+void uart_recv_at(QT_UART_CONF_PARA *uart_conf)
+{
+	qapi_UART_Receive(uart_conf->hdlr, uart_conf->rx_buff, uart_conf->rx_len, (void*)uart_conf);
+}
+
+/* end */
+
+
+void daily_heartbeat_rep(void)
+{
+	/* init the timer: reload timer */
+
+    /* report gps location once timer expires */
+
 	return;
 }
 
@@ -713,41 +921,59 @@ void ig_on_process()
 /*=========================================================================*/
 int quectel_task_entry(void)
 {
+	AE_BITMAP_T bitmap = {0};
 	boolean cur_ig_status = FALSE;
-	boolean last_ig_status = FALSE;
+	boolean last_ig_status = TRUE;
 	IG_ON_RUNNING_MODE_E ig_on_mode = IG_ON_WATCH_M;
 
 	
 	/* OTA service start */
 	ota_service_start();
 
+	/* init gpio */
+	gpio_init();
+
+	/* register AT command framework to support communicate with BLE */
+	bg96_com_ble_task();
+
 	/* system init */
 	system_init();
+
+	/* daily heart beat init */
+	daily_heartbeat_rep();
 
 	normal_start = TRUE;
 	/* create signal handler to receive  */
 	tx_event_flags_create(&ig_switch_signal_handle, "ignition status tracking");
 	tx_event_flags_set(&ig_switch_signal_handle, 0x0, TX_AND);
 	
+	/* vehicle motion detect */
+	cur_ig_status = vehicle_ignition_detect();
+	
 	while(normal_start)
 	{
-		/* vehicle motion detect */
-		cur_ig_status = vehicle_motion_detect();
+		/* update cur_ig_status if diff with last status */
+		if(last_ig_status != cur_ig_status)
+		{
+			cur_ig_status = vehicle_ignition_detect();
+		}
 
 		/* ignition off */
 		if(FALSE == cur_ig_status)
 		{
+			BIT_SET(bitmap.alarm_eve, 5); /* denote ig off event */
 			ig_off_process();
 		}
 		else 
 		{
+			BIT_SET(bitmap.alarm_eve, 3); /* denote ig on event */
 			/* mode detect */
-			ig_on_mode = check_running_mode();
+			ig_on_mode = check_running_mode(ATEL_IG_ON_RUNNING_MODE_CFG_FILE);
 			ig_on_process(ig_on_mode);
 		}
 
 		/* alarm and event report*/
-		
+		alarm_event_process();
 
 		/* store last ig status */
 		last_ig_status = cur_ig_status;

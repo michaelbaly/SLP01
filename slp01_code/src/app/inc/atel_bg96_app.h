@@ -24,11 +24,35 @@
 
 #include <locale.h>
 
+#define HIGH  1
+#define LOW   0
+#define TRUE  1
+#define FALSE 0
+
+/* begin: for subtask of tcp client */
 #define ATEL_TCPCLIENT_THREAD_PRIORITY   	180
 #define ATEL_TCPCLIENT_THREAD_STACK_SIZE 	(1024 * 32)
 
 static TX_THREAD* atel_tcpclient_thread_handle;
 static unsigned char atel_tcpclient_thread_stack[ATEL_TCPCLIENT_THREAD_STACK_SIZE];
+/* end */
+
+/* begin: for subtask of gps service */
+#define ATEL_GPS_THREAD_PRIORITY   	180
+#define ATEL_GPS_THREAD_STACK_SIZE 	(1024 * 32)
+
+static TX_THREAD* atel_gps_thread_handle;
+static unsigned char atel_gps_thread_stack[ATEL_GPS_THREAD_STACK_SIZE];
+/* end */
+
+/* begin: for subtask of mdm communicate with ble through at framework */
+#define ATEL_AT_FRAME_THREAD_PRIORITY   	180
+#define ATEL_AT_FRAME_THREAD_STACK_SIZE 	(1024 * 32)
+
+static TX_THREAD* atel_at_frame_thread_handle;
+static unsigned char atel_at_frame_thread_stack[ATEL_AT_FRAME_THREAD_STACK_SIZE];
+/* end */
+
 
 /* struct for tcp client subtask */
 typedef struct  module_task_config{
@@ -42,20 +66,14 @@ typedef struct  module_task_config{
 	
 }subtask_config_t;
 
-#define QT_Q_MAX_INFO_NUM		16
-
-typedef struct TASK_COMM_S{
-	int msg_id;
-	int dat;
-	CHAR name[16];
-	CHAR buffer[32];
-}TASK_MSG;
 
 typedef enum {
 	IG_ON_WATCH_M = 0,
 	IG_ON_THEFT_M,
 	IG_ON_INVALID_M
 }IG_ON_RUNNING_MODE_E;
+
+#define IG_ON_DEFAULT_M IG_ON_WATCH_M
 
 /* begin: ig status switch event*/
 typedef  unsigned char      boolean; 

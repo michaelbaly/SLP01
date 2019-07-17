@@ -41,50 +41,42 @@
 /*==========================================================================
 LOCATION API REGISTERED CALLBACKS
 ===========================================================================*/
-static void location_capabilities_callback(qapi_Location_Capabilities_Mask_t capabilities)
-{
 
-}
-
-static void location_response_callback(qapi_Location_Error_t err, uint32_t id)
-{
-
-}
-
-static void location_geofence_response_callback(size_t count,
-                                                qapi_Location_Error_t* err,
-                                                uint32_t* ids)
-{
-}
-
-static void location_tracking_callback(qapi_Location_t loc)
-{
-}
-
-qapi_Location_Callbacks_t location_callbacks= {
-    sizeof(qapi_Location_Callbacks_t),
-    location_capabilities_callback,
-    location_response_callback,
-    location_geofence_response_callback,
-    location_tracking_callback,
-    NULL,
-    NULL
-};
 
 /*==========================================================================
 LOCATION INIT / DEINIT APIs
 ===========================================================================*/
-void location_init(void)
-{
-}
 
-void location_deinit(void)
-{
-}
 
-int quectel_gps_task_entry(void)
+int atel_gps_entry(void)
 {
+	uint32 signal = 0;
 
+	/* lat&long update interval: 1 sec */
+	qapi_Location_Options_t Location_Options = {sizeof(qapi_Location_Options_t), 
+												LAT_LONG_UPDATE_FREQ, 
+
+	/* gps service init */											0};
+	location_init();
+
+	/* start location tracking */
+	qapi_Loc_Start_Tracking(loc_clientid, &Location_Options, &gps_tracking_id);
+	tx_event_flags_get(&gps_signal_handle, 
+					   LOCATION_TRACKING_RSP_OK_BIT|LOCATION_TRACKING_RSP_FAIL_BIT, 
+					   TX_OR_CLEAR, 
+					   &signal, 
+					   TX_WAIT_FOREVER);
+	/* respond callback has been triggered */
+	if(signal&LOCATION_TRACKING_RSP_OK_BIT)
+	{
+		qt_uart_dbg("wating for tracking...");
+	}
+	else if(signal&LOCATION_TRACKING_RSP_FAIL_BIT)
+	{
+		qt_uart_dbg("start tracking failed");
+		location_deinit();
+		return -1;
+	}
 	return 0;
 }
 

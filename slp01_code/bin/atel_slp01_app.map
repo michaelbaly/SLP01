@@ -1,0 +1,30 @@
+ARM Linker, 5.01 [Build 43] 
+
+==============================================================================
+
+Memory Map of the image
+
+  Image Entry point : 0x00000000
+
+  Load Region LR_1 (Base: 0x40000000, Size: 0x0000023c, Max: 0xffffffff, ABSOLUTE)
+
+    Execution Region ER_RO (Base: 0x40000000, Size: 0x00000230, Max: 0xffffffff, ABSOLUTE)
+
+    Base Addr    Size         Type   Attr      Idx    E Section Name        Object
+
+    0x40000000   0x00000080   Code   RO          118    Init                txm_module_preamble.o
+    0x40000080   0x00000078   Code   RO          122  * .text               txm_lib.lib(txm_module_thread_shell_entry.o)
+    0x400000f8   0x00000138   Code   RO          231    .text               txm_lib.lib(txm_module_callback_request_thread_entry.o)
+
+
+    Execution Region ER_RW (Base: 0x40000230, Size: 0x0000000c, Max: 0xffffffff, ABSOLUTE)
+
+    Base Addr    Size         Type   Attr      Idx    E Section Name        Object
+
+    0x40000230   0x0000000c   Data   RW          124    .data               txm_lib.lib(txm_module_thread_shell_entry.o)
+
+
+    Execution Region ER_ZI (Base: 0x4000023c, Size: 0x00000000, Max: 0xffffffff, ABSOLUTE)
+
+    **** No section assigned to this execution region ****
+

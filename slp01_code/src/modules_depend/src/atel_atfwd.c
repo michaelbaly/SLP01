@@ -369,39 +369,6 @@ void uart_recv_at(QT_UART_CONF_PARA *uart_conf)
 	//IOT_DEBUG("QT# qapi_UART_Receive [%d] status %d", (qapi_UART_Port_Id_e)uart_conf->port_id, status);
 }
 
-void gpio_release(void)
-{
-	
-	//gpio_value_control(PIN_E_GPIO_01, TRUE);
-	//qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_01], gpio_id_tbl[PIN_E_GPIO_01]);
-
-	
-	gpio_value_control(PIN_E_GPIO_04, LOW);
-	qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_04], gpio_id_tbl[PIN_E_GPIO_04]);
-
-	
-	gpio_value_control(PIN_E_GPIO_19, LOW);
-	qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_19], gpio_id_tbl[PIN_E_GPIO_19]);
-
-	
-	gpio_value_control(PIN_E_GPIO_20, LOW);
-	qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_20], gpio_id_tbl[PIN_E_GPIO_20]);
-
-	
-	gpio_value_control(PIN_E_GPIO_05, LOW);
-	qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_05], gpio_id_tbl[PIN_E_GPIO_05]);
-
-	
-	gpio_value_control(PIN_E_GPIO_09, LOW);
-	qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_09], gpio_id_tbl[PIN_E_GPIO_09]);
-
-	
-	//gpio_value_control(PIN_E_GPIO_21, FALSE);
-	//qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_21], gpio_id_tbl[PIN_E_GPIO_21]);
-
-	
-	return;
-}
 
 boolean cmd_ctrl_gpio(char *tmp_params)
 {
@@ -435,7 +402,7 @@ void atfwd_cmd_handler_cb(boolean is_reg, char *atcmd_name,
     qapi_Status_t ret = QAPI_ERROR;
     
     //atel_dbg_print("atfwd_cmd_handler_cb is called, is_reg:[%d]atcmd_name:[%s] mask:[%d]\n", is_reg,atcmd_name, mask);
-    if(is_reg )   //Registration Successful,is_reg return 1 
+    if (is_reg)   //Registration Successful,is_reg return 1 
     {
         //atel_dbg_print("Atcmd %s is registered\n",atcmd_name);
         if(mask ==0)
@@ -445,7 +412,7 @@ void atfwd_cmd_handler_cb(boolean is_reg, char *atcmd_name,
         if( !strncasecmp(atcmd_name, "+BLE",strlen(atcmd_name)) )
         {
             //Execute Mode
-            if ((QUEC_AT_MASK_NA_V01) == mask)//AT+MCU
+            if ((QUEC_AT_MASK_NA_V01) == mask)//AT+BLE
             {
                 ret = qapi_atfwd_send_resp(atcmd_name, "", QUEC_AT_RESULT_OK_V01);
             }
@@ -475,95 +442,19 @@ void atfwd_cmd_handler_cb(boolean is_reg, char *atcmd_name,
                 {
                 	//send command to uart2
                 	qt_uart_dbg(uart2_conf.hdlr, "%s", tmp_params);
-					
 					atel_dbg_print("[send to BLE rx] tmp_params %s@string", tmp_params);
                 }
-				#if 1
+				
                 if (!cmd_ctrl_gpio(tmp_params))
                 {
 					atel_dbg_print("command does't support: %s", tmp_params);
                 }
-				#endif
-				#if 0
-                else if(stricmp(tmp_params,"CHARGE_DET_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_01, FALSE);
-                }
-                else if(stricmp(tmp_params,"CHARGE_DET_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_01, TRUE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_01], gpio_id_tbl[PIN_E_GPIO_01]);
-                }
-                else if(stricmp(tmp_params,"MDM_LDO_ENABLE") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_02, FALSE);
-                }
-                else if(stricmp(tmp_params,"MDM_LDO_DISABLE") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_02, TRUE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_01], gpio_id_tbl[PIN_E_GPIO_01]);
-                }
-                else if(stricmp(tmp_params,"LAN_POWER_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_04, TRUE);
-                }
-                else if(stricmp(tmp_params,"LAN_POWER_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_04, FALSE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_04], gpio_id_tbl[PIN_E_GPIO_04]);
-                }
-                else if(stricmp(tmp_params,"WAKEUP_IN_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_05, TRUE);
-                }
-                else if(stricmp(tmp_params,"WAKEUP_IN_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_05, FALSE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_05], gpio_id_tbl[PIN_E_GPIO_05]);
-                }
-                else if(stricmp(tmp_params,"WAKE_BLE_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_09, TRUE);
-                }
-                else if(stricmp(tmp_params,"WAKE_BLE_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_09, FALSE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_09], gpio_id_tbl[PIN_E_GPIO_09]);
-                }
-                else if(stricmp(tmp_params,"GREEN_LED_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_19, TRUE);
-                }
-                else if(stricmp(tmp_params,"GREEN_LED_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_19, FALSE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_19], gpio_id_tbl[PIN_E_GPIO_19]);
-                }
-                else if(stricmp(tmp_params,"BLUE_LED_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_20, TRUE);
-                }
-                else if(stricmp(tmp_params,"BLUE_LED_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_20, FALSE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_20], gpio_id_tbl[PIN_E_GPIO_20]);
-                }
-                else if(stricmp(tmp_params,"ACC_INT2_ON") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_21, TRUE);
-                }
-                else if(stricmp(tmp_params,"ACC_INT2_OFF") == 0)
-                {
-                	gpio_value_control(PIN_E_GPIO_21, FALSE);
-					qapi_TLMM_Release_Gpio_ID(&tlmm_config[PIN_E_GPIO_21], gpio_id_tbl[PIN_E_GPIO_21]);
-                }
-				#endif
-				
 				else
                 {
 					atel_dbg_print("content of atcmd_name:%s, at_fwd_params:%s", atcmd_name, at_fwd_params);
                 	qapi_atfwd_send_urc_resp(atcmd_name, at_fwd_params);
                 }
+				
             }
         }
         else
@@ -582,50 +473,17 @@ void atfwd_cmd_handler_cb(boolean is_reg, char *atcmd_name,
 @brief
 	Entry function for task. 
 */
-int quectel_task_entry(void)
+int atel_mdm_ble_entry(void)
 {
 	qapi_Status_t retval = QAPI_ERROR;
 	TASK_MSG rxdata;
 	char buff[2048] = {0};
 	char atcmd_name[32] = {0};
-
-	/* wait 5sec for device startup */
-	qapi_Timer_Sleep(5, QAPI_TIMER_UNIT_SEC, true);
-
-	/* uart init */
-	//uart_init_at(&uart1_conf);
-	/* start uart receive */
-	//uart_recv_at(&uart1_conf);
-	/* prompt task running */
-    
-	//qt_uart_dbg(uart1_conf.hdlr,"ATFWD Example entry...\n");
         
 	/* uart 2 init */
 	uart_init_at(&uart2_conf);
 	/* start uart 2 receive */
 	uart_recv_at(&uart2_conf);
-
-	//config gpio direction
-	gpio_dir_control(PIN_E_GPIO_01,QAPI_GPIO_INPUT_E);  //charge_DET
-	gpio_dir_control(PIN_E_GPIO_02,QAPI_GPIO_OUTPUT_E); //MDM_LDO_EN
-	gpio_dir_control(PIN_E_GPIO_04,QAPI_GPIO_OUTPUT_E); //LNA_Power_EN
-	gpio_dir_control(PIN_E_GPIO_05,QAPI_GPIO_INPUT_E);  //WAKEUP_IN
-	gpio_dir_control(PIN_E_GPIO_09,QAPI_GPIO_OUTPUT_E); //WAKE_BLE
-	gpio_dir_control(PIN_E_GPIO_19,QAPI_GPIO_OUTPUT_E); //GREEN_LED
-	gpio_dir_control(PIN_E_GPIO_20,QAPI_GPIO_OUTPUT_E); //BLUE_LED
-	//gpio_dir_control(PIN_E_GPIO_21,QAPI_GPIO_INPUT_E); //ACC_INT2
-
-	//set default value for gpio	
-	gpio_value_control(PIN_E_GPIO_02, HIGH);
-	gpio_value_control(PIN_E_GPIO_04, HIGH);
-	gpio_value_control(PIN_E_GPIO_05, HIGH);
-	gpio_value_control(PIN_E_GPIO_09, HIGH);
-	gpio_value_control(PIN_E_GPIO_19, HIGH);
-	gpio_value_control(PIN_E_GPIO_20, HIGH);
-	//gpio_value_control(PIN_E_GPIO_21, TRUE);
-
-	// output debug info to main uart1
-	//atel_dbg_print("atfwd app start...\n");
 	
     retval = qapi_atfwd_reg("+BLE", atfwd_cmd_handler_cb);
     if(retval != QAPI_OK)
@@ -679,6 +537,7 @@ int quectel_task_entry(void)
 
     return 0;
 }
+
 #endif/*end of __EXAMPLE_ATFWD__*/
 
 
