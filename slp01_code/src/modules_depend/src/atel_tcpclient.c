@@ -108,9 +108,9 @@ static TX_QUEUE tcp_normal_queue_handle;
 static TX_QUEUE tcp_alarm_queue_handle;
 static TX_QUEUE tcp_event_queue_handle;
 
-static TASK_MSG task_comm[QT_Q_MAX_INFO_NUM];
-
-
+static TASK_MSG normal_queue[QT_Q_MAX_INFO_NUM];
+static TASK_MSG alarm_queue[QT_Q_MAX_INFO_NUM];
+static TASK_MSG event_queue[QT_Q_MAX_INFO_NUM];
 
 
 
@@ -473,20 +473,22 @@ static int start_tcp_session(void)
 	char buff[SENT_BUF_SIZE];
 	struct sockaddr_in client_addr;
 
+	#if 0
 	/* begin: create msg queue */
     retval = tx_queue_create(&tcp_normal_queue_handle,
 							 "gps loc report",
 							 TX_16_ULONG,
-							 task_comm,
+							 normal_queue,
 							 QT_Q_MAX_INFO_NUM *sizeof(TASK_MSG)
 							 );
 	
     if (TX_SUCCESS != retval)
     {
-    	//qt_uart_dbg(uart1_conf.hdlr, "tx_queue_create failed with status %d", retval);
+    	qt_uart_dbg(uart1_conf.hdlr, "tx_queue_create failed with status %d", retval);
     }
 
 	/* end: create msg queue */
+	#endif
 
 	do
 	{

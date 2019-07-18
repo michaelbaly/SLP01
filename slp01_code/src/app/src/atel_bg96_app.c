@@ -17,7 +17,7 @@
 #include "quectel_utils.h"
 #include "quectel_uart_apis.h"
 #include "atel_bg96_app.h"
-#include "events_if.h"
+//#include "events_if.h"
 
 
 
@@ -57,6 +57,11 @@ qapi_TIMER_set_attr_t timer_set_attr;
 #define MSO_COUNTER_PRESET	5
 static char g_mso_counter = 0;
 
+/* end */
+
+/* begin: sim relay from ble */
+boolean g_sim_relay_ble;
+boolean g_sim_counter;
 /* end */
 
 
@@ -599,7 +604,7 @@ void gps_service_start(void)
 	}
 }
 
-void bg96_com_ble_task(void)
+int bg96_com_ble_task(void)
 {
 	
 	int32 status = -1;
@@ -626,7 +631,10 @@ void bg96_com_ble_task(void)
 	if(status != TX_SUCCESS)
 	{
 		qt_uart_dbg("[task_create] : Thread creation failed");
+		return -1;
 	}
+
+	return 0;
 }
 
 
@@ -648,10 +656,10 @@ char vehicle_ignition_detect(void)
 	ULONG switch_event = 0;
 	boolean ig_status = 0xff;
 	
-	/* DO1 status check */
-	ig_status = gpio_read();
+	/* DO1(relay) status check */
+	ig_status = relay_from_ble();
 
-	/* get signal from ig_on flow or ig_off flow */
+	/* get status from  */
 	tx_event_flags_get(&ig_switch_signal_handle, sig_mask, TX_OR, &switch_event, TX_NO_WAIT);
 	
 	/* swtich from off to on */
@@ -682,7 +690,7 @@ void loc_report(boolean    update_flag)
 	/* get loc info from gps module */
 
 	/* loc to TCP client's normal queue */
-	qapi_send(int32_t handle, char * buf, int32_t len, int32_t flags);
+	//qapi_send(int32_t handle, char * buf, int32_t len, int32_t flags);
 
 	if(update_flag == TRUE)
 	{
@@ -730,39 +738,102 @@ void MSO_enable(void)
 
 void ig_off_process()
 {
+	#if 0
 	/* whether enable MSO feature or not */
 	if(motion_status && cell_coverage && gps_fix_valid)
 	{
 		/* report gps location */
-		loc_report();
-		if(OK == engine_starter_disable())
+		loc_report(FALSE);
+
+		/* tell ble to disable relay */
+		if(OK == relay_from_ble())
 		{
 			MSO_enable();
 		}
 	}
-	/* send signal to main task when ignition status switch to ignition on */
-	if (HIGH == gpio_read(DIG_OUTPUT1))
+	#endif
+
+	/* ig off flow loop */
+	while(1)
 	{
-		tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_ON_E, TX_OR);
+		/* report event or alarm, condition??? */
+		alarm_event_process();
+		
+		/* send signal to main task when ignition status switch to ignition on */
+		if (HIGH == relay_from_ble())
+		{
+			tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_ON_E, TX_OR);
+			/* terminate ig off data flow */
+			break;
+		}
 	}
 	
 	return ;
 }
 
-void ig_on_process()
+void drv_behav_detect(void)
 {
-	/* driving behavior detect */
-	drv_bhav_detect();
+	return;
+}
 
-	/* set alarm or event bit if condition met */
-	
-	
-	/* send signal to main task when ignition status switch to ignition Off */
-	if (LOW == gpio_read(DIG_OUTPUT1))
+void gpio_driver_random(ULONG gpio_phy)
+{   
+	g_sim_counter++;
+	if(g_sim_counter % 2 )
 	{
-		tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_OFF_E, TX_OR);
+		g_sim_relay_ble = HIGH;
+	}
+	else 
+	{
+		g_sim_relay_ble = LOW;
 	}
 	
+	return;
+}
+
+/*
+@func
+  relay_from_ble
+@brief
+  get relay status from ble. 
+*/
+/*=========================================================================*/
+void relay_from_ble(void)
+{
+	TX_TIMER gpio_sim;
+	ULONG init_expire_tick = 10000;
+	/* use gpio to simulate relay value */
+	tx_timer_create(&gpio_sim, "gpio sim timer", gpio_driver_random, 0, \
+					init_expire_tick, 30000, TX_AUTO_ACTIVATE);
+	
+	return g_sim_relay_ble;
+}
+
+void ig_on_process(IG_ON_RUNNING_MODE_E mode)
+{
+
+	/* loc report and update base on the running mode */
+	//loc_report(boolean update_flag);
+
+	while(1)
+	{
+		/* driving behavior detect */
+		drv_behav_detect();
+		
+		/* set alarm or event bit if condition met */
+
+		/* report event or alarm, condition??? */
+		alarm_event_process();
+		
+		/* send signal to main task when ignition status switch to ignition Off */
+		if (LOW == relay_from_ble())
+		{
+			tx_event_flags_set(&ig_switch_signal_handle, IG_SWITCH_OFF_E, TX_OR);
+			break;
+		}
+		
+	}
+
 	return;
 }
 
@@ -923,8 +994,9 @@ int quectel_task_entry(void)
 {
 	AE_BITMAP_T bitmap = {0};
 	boolean cur_ig_status = FALSE;
-	boolean last_ig_status = TRUE;
 	IG_ON_RUNNING_MODE_E ig_on_mode = IG_ON_WATCH_M;
+	int sig_mask = IG_SWITCH_OFF_E | IG_SWITCH_ON_E;
+	ULONG switch_event = 0;
 
 	
 	/* OTA service start */
@@ -939,44 +1011,49 @@ int quectel_task_entry(void)
 	/* system init */
 	system_init();
 
-	/* daily heart beat init */
+	/* daily heart beat report after system up */
 	daily_heartbeat_rep();
 
 	normal_start = TRUE;
 	/* create signal handler to receive  */
 	tx_event_flags_create(&ig_switch_signal_handle, "ignition status tracking");
 	tx_event_flags_set(&ig_switch_signal_handle, 0x0, TX_AND);
-	
-	/* vehicle motion detect */
-	cur_ig_status = vehicle_ignition_detect();
-	
-	while(normal_start)
-	{
-		/* update cur_ig_status if diff with last status */
-		if(last_ig_status != cur_ig_status)
-		{
-			cur_ig_status = vehicle_ignition_detect();
-		}
 
+	
+	/* enter ig off flow when system normal up */
+	if (TRUE == normal_start)
+	{
+		ig_off_process();
+	}
+	
+	while(1)
+	{
+		
+		/* get switch event */
+		tx_event_flags_get(&ig_switch_signal_handle, sig_mask, TX_OR, &switch_event, TX_NO_WAIT);
+		
 		/* ignition off */
-		if(FALSE == cur_ig_status)
+		if(switch_event&IG_SWITCH_OFF_E)
 		{
-			BIT_SET(bitmap.alarm_eve, 5); /* denote ig off event */
+			#ifdef ATEL_DEBUG
+			atel_dbg_print("switch to ig off flow");
+			#endif
+			BIT_SET(bitmap.alarm_eve, IG_OFF_E); /* denote ig off event */
+			tx_event_flags_set(&ig_switch_signal_handle, ~IG_SWITCH_OFF_E, TX_AND);
 			ig_off_process();
 		}
-		else 
+		else if(switch_event&IG_SWITCH_ON_E)
 		{
-			BIT_SET(bitmap.alarm_eve, 3); /* denote ig on event */
+			#ifdef ATEL_DEBUG
+			atel_dbg_print("switch to ig on flow");
+			#endif
+			BIT_SET(bitmap.alarm_eve, IG_ON_E); /* denote ig on event */
+			tx_event_flags_set(&ig_switch_signal_handle, ~IG_SWITCH_ON_E, TX_AND);
 			/* mode detect */
 			ig_on_mode = check_running_mode(ATEL_IG_ON_RUNNING_MODE_CFG_FILE);
 			ig_on_process(ig_on_mode);
 		}
 
-		/* alarm and event report*/
-		alarm_event_process();
-
-		/* store last ig status */
-		last_ig_status = cur_ig_status;
 	}
 }
 
