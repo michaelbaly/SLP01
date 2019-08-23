@@ -32,9 +32,18 @@
 #define ATEL_TCPCLIENT_THREAD_PRIORITY   	180
 #define ATEL_TCPCLIENT_THREAD_STACK_SIZE 	(1024 * 32)
 
-static TX_THREAD* atel_tcpclient_thread_handle;
+//static TX_THREAD* atel_tcpclient_thread_handle;
 static unsigned char atel_tcpclient_thread_stack[ATEL_TCPCLIENT_THREAD_STACK_SIZE];
 /* end */
+
+/* begin: for subtask of udp client */
+#define ATEL_UDPCLIENT_THREAD_PRIORITY   	100
+#define ATEL_UDPCLIENT_THREAD_STACK_SIZE 	(1024 * 32)
+
+//static TX_THREAD* atel_tcpclient_thread_handle;
+static unsigned char atel_udpclient_thread_stack[ATEL_UDPCLIENT_THREAD_STACK_SIZE];
+/* end */
+
 
 /* begin: for subtask of gps service */
 #define ATEL_GPS_THREAD_PRIORITY   	180
@@ -53,7 +62,7 @@ static unsigned char atel_at_frame_thread_stack[ATEL_AT_FRAME_THREAD_STACK_SIZE]
 /* end */
 
 
-/* struct for tcp client subtask */
+/* struct for subtask */
 typedef struct  module_task_config{
 	
     TX_THREAD* module_thread_handle;
@@ -91,6 +100,7 @@ void loc_info_transform(qapi_Location_t location, char* trans_buf);
 int ota_service_start(void);
 
 extern	int atel_tcpclient_entry(void);
+extern	int atel_udpclient_entry(void);
 extern  int atel_gps_entry(void);
 extern  int atel_mdm_ble_entry(void);
 extern  int atel_led_on(MODULE_PIN_ENUM m_pin);

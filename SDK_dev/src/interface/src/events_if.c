@@ -71,6 +71,21 @@ void alarm_event_process(void)
 }
 
 
+/*
+@func
+  cmd_parse
+@brief
+  receive cmd from tcp/udp server
+*/
+void cmd_parse(char *cmd_str)
+{
+	/* extract each para from cmd_str */
+	
+	return;
+}
+
+
+
 #endif /*__EXAMPLE_BG96_APP__*/
 
 

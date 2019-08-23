@@ -21,6 +21,8 @@
 #include "events_if.h"
 #include "atel_tcpclient.h"
 #include "atel_gps.h"
+#include <locale.h>
+
 
 
 
@@ -30,6 +32,8 @@
 *                                 DEFINE
 ***************************************************************************/
 #define ATEL_DEBUG
+#define IF_SERVER_DEBUG
+
 
 qapi_TIMER_handle_t timer_handle;
 qapi_TIMER_define_attr_t timer_def_attr;
@@ -80,6 +84,14 @@ subtask_config_t tcpclient_task_config ={
     atel_tcpclient_thread_stack, ATEL_TCPCLIENT_THREAD_STACK_SIZE, ATEL_TCPCLIENT_THREAD_PRIORITY
     
 };
+
+subtask_config_t udpclient_task_config ={
+    
+    NULL, "Atel Udpclient Task Thread", atel_udpclient_entry, \
+    atel_udpclient_thread_stack, ATEL_UDPCLIENT_THREAD_STACK_SIZE, ATEL_UDPCLIENT_THREAD_PRIORITY
+    
+};
+
 	
 subtask_config_t gps_task_config ={
 	
@@ -94,6 +106,10 @@ subtask_config_t mdm_ble_at_config ={
 	atel_at_frame_thread_stack, ATEL_AT_FRAME_THREAD_STACK_SIZE, ATEL_AT_FRAME_THREAD_PRIORITY
 	
 };
+
+/* begin: rq for cmd from server */
+r_queue_s rq;
+/* end */
 
 
 
@@ -114,7 +130,7 @@ void atel_dbg_print(const char* fmt, ...)
 	va_end(ap);
 
 	qapi_atfwd_send_urc_resp("ATEL", log_buf);
-	qapi_Timer_Sleep(50, QAPI_TIMER_UNIT_MSEC, true);
+	//qapi_Timer_Sleep(50, QAPI_TIMER_UNIT_MSEC, true);
 
 	return;
 }
@@ -215,6 +231,38 @@ char tcp_service_start(void)
 	return 0;
 }
 
+char udp_service_start(void)
+{
+    int32 status = -1;
+	
+	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&udpclient_task_config.module_thread_handle, sizeof(TX_THREAD))) 
+	{
+		atel_dbg_print("[task_create] txm_module_object_allocate failed ~");
+		return - 1;
+	}
+
+	/* create the subtask step by step */
+	status = tx_thread_create(udpclient_task_config.module_thread_handle,
+					   udpclient_task_config.module_task_name,
+					   udpclient_task_config.module_task_entry,
+					   NULL,
+					   udpclient_task_config.module_thread_stack,
+					   udpclient_task_config.stack_size,
+					   udpclient_task_config.stack_prior,
+					   udpclient_task_config.stack_prior,
+					   TX_NO_TIME_SLICE,
+					   TX_AUTO_START
+					   );
+	  
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[task_create] : Thread creation failed");
+	}
+
+	return 0;
+}
+
+
 int gps_service_start(void)
 {
 	int32 status = -1;
@@ -284,7 +332,7 @@ int bg96_com_ble_task(void)
 void cb_timer(ULONG gpio_phy)
 {   
 	g_sim_counter++;
-	atel_dbg_print("[timer callback]g_sim_counter is: %d", g_sim_counter);
+	atel_dbg_print("[cb_timer]g_sim_counter is: %d", g_sim_counter);
 	if(g_sim_counter % 2)
 	{
 		g_sim_relay_ble = HIGH;
@@ -336,7 +384,10 @@ void system_init(void)
 {
 
 	/* tcp service bring up */
-	tcp_service_start();
+	//tcp_service_start();
+
+	/* udp service bring up */
+	udp_service_start();
 	
 	/* gps service bring up */
     gps_service_start();
@@ -516,7 +567,7 @@ void ig_on_process(IG_ON_RUNNING_MODE_E mode)
 			tx_event_flags_set(ig_switch_signal_handle, IG_SWITCH_OFF_E, TX_OR);
 			break;
 		}
-
+ 
 		
 		qapi_Timer_Sleep(5, QAPI_TIMER_UNIT_SEC, true);
 
@@ -554,7 +605,9 @@ void gpio_init(void)
 	
 }
 
-
+/* heart beat report 
+   report interval is set by server through HEARTBEAT command
+*/
 void daily_heartbeat_rep(void)
 {
 	/* init the timer: reload timer */
@@ -578,9 +631,11 @@ int quectel_task_entry(void)
 	IG_ON_RUNNING_MODE_E ig_on_mode = IG_ON_WATCH_M;
 	ULONG sig_mask = IG_SWITCH_OFF_E | IG_SWITCH_ON_E;
 	ULONG switch_event = 0;
+	char *sock_buf = NULL;
 	
-	/* wait 5sec for device startup */
-	//qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_SEC, true);
+	/* wait 10sec for device startup */
+	qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_SEC, true);
+
 
 	/* slp01 main task start */
 	atel_dbg_print("[slp01 main task] start up ...\n");
@@ -594,6 +649,11 @@ int quectel_task_entry(void)
 	/* ignition timer init */
 	ig_timer_init();
 
+#ifndef IF_SERVER_DEBUG
+	atel_dbg_print("cmd_parse_start......");
+	cmd_parse_entry(sock_buf);
+	atel_dbg_print("[ok]");
+#endif
 
 	#ifdef ATEL_BG96_COM_BLE
 	/* register AT command framework to support communicate with BLE */
@@ -605,7 +665,7 @@ int quectel_task_entry(void)
 	#endif 
 
 	/* system init */
-	//system_init();
+	system_init();
 
 	/* daily heart beat report after system up */
 	daily_heartbeat_rep();

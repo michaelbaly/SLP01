@@ -9,8 +9,8 @@
 *  Confidential and Proprietary - Quectel Technologies, Inc.
 *  ---------------------------------------------------------------------------
 *******************************************************************************/
-#ifndef __ATEL_TCPCLINET_H__
-#define __ATEL_TCPCLINET_H__
+#ifndef __ATEL_UDPCLINET_H__
+#define __ATEL_UDPCLINET_H__
 
 #if defined(__ATEL_BG96_APP__)
 /*===========================================================================
@@ -29,13 +29,10 @@
 /*===========================================================================
                              DEFINITION
 ===========================================================================*/
-#define DEF_SRC_TYPE    SOCK_STREAM	//SOCK_STREAM(TCP) SOCK_DGRAM(UDP)
-#define DEF_LOC_ADDR	 "127.0.0.1"
-//#define DEF_SRV_ADDR    "220.180.239.212"
-//#define DEF_SRV_PORT    (8007)
-#define DEF_SRV_ADDR    "180.166.175.194"
-#define DEF_SRV_PORT    (7500)
-
+#define DEF_SRC_TYPE    SOCK_DGRAM	//SOCK_STREAM(TCP) SOCK_DGRAM(UDP)
+#define DEF_LOC_ADDR	"127.0.0.1"
+#define DEF_SRV_ADDR    "180.166.175.194" //atel udp IP
+#define DEF_SRV_PORT    (7501) //atel udp port
 #define DEF_BACKLOG_NUM (5)
 
 #define RECV_BUF_SIZE   (128)
@@ -85,29 +82,25 @@ typedef enum DSS_SIG_EVENTS
 	DSS_SIG_EVT_MAX_E		= LEFT_SHIFT_OP(5)
 } DSS_Signal_Evt_e;
 
-typedef struct TASK_COMM_S{
-	int msg_id;
-	int dat;
-	CHAR name[16];
-	CHAR buffer[32];
-}TASK_MSG;
-
+typedef enum SER_MSG_TYPE{
+	SCMD_TYPE_E = 0,
+	SACK_TYPE_E,
+	INVALID_TYPE_E
+}SER_MSG_TYPE_E;
 
 /*===========================================================================
                              DECLARATION
 ===========================================================================*/
-int32 tcp_inet_ntoa(const qapi_DSS_Addr_t inaddr, uint8 *buf, int32 buflen);
-void tcp_show_sysinfo(void);
+int32 udp_inet_ntoa(const qapi_DSS_Addr_t inaddr, uint8 *buf, int32 buflen);
+void udp_show_sysinfo(void);
 
-void tcp_uart_dbg_init(void);
+void udp_uart_dbg_init(void);
+void udp_uart_debug_print(const char* fmt, ...);
 
-int tcp_netctrl_start(void);
-int tcp_netctrl_stop(void);
+int udp_netctrl_start(void);
+int udp_netctrl_stop(void);
 
 int quec_dataservice_entry(void);
+#endif /*__EXAMPLE_TCPCLINET__*/
 
-extern void atel_dbg_print(const char* fmt, ...);
-extern int g_atel_sockfd;
-#endif /*__ATEL_BG96_APP__*/
-
-#endif /*__ATEL_TCPCLINET_H__*/
+#endif /*__EXAMPLE_TCPCLINET_H__*/
