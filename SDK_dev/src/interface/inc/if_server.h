@@ -148,7 +148,6 @@ const char cmd_set[] = "APN,123456,iot.nb,michael,138114#";
 const char cmd_query[] = "APN,123456?";
 
 static char g_sys_passwd[SYS_PASSWD_MAX_LEN+1] = SYS_DEFAULT_PASSWD;
-static char ack_buffer[ACK_SET_LEN_MAX] = {0};
 
 char g_imei_buf[MAX_IMEI_LEN] = { 0 };
 char g_dev_name[MAX_DEV_LEN] = DFT_DEV_NAME;

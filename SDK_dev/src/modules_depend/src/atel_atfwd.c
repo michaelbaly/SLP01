@@ -304,8 +304,8 @@ void atfwd_cmd_handler_cb(boolean is_reg, char *atcmd_name,
     int  tmp_val = 0;
     qapi_Status_t ret = QAPI_ERROR;
     
-    qt_uart_dbg(uart_conf.hdlr,"atfwd_cmd_handler_cb is called, atcmd_name:[%s] mask:[%d]\n", atcmd_name, mask);
-	qt_uart_dbg(uart_conf.hdlr,"atfwd_cmd_handler_cb is called,  is_reg:[%d]\n", is_reg);
+    atel_dbg_print("atfwd_cmd_handler_cb is called, atcmd_name:[%s] mask:[%d]\n", atcmd_name, mask);
+	atel_dbg_print("atfwd_cmd_handler_cb is called,  is_reg:[%d]\n", is_reg);
 
 	if(is_reg)  //Registration Successful,is_reg return 1 
 	{

@@ -31,6 +31,7 @@
 #include "qapi_diag.h"
 #include "quectel_utils.h"
 #include "quectel_uart_apis.h"
+//#include "if_server.h"
 #include "atel_udpclient.h"
 
 /*===========================================================================
@@ -42,15 +43,6 @@
 
 #define GET_ADDR_INFO_MIN(a, b) ((a) > (b) ? (b) : (a))
 
-#define QUEC_UDP_UART_DBG
-#ifdef QUEC_UDP_UART_DBG
-#define UDP_UART_DBG(...)	\
-{\
-	udp_uart_debug_print(__VA_ARGS__);	\
-}
-#else
-#define UDP_UART_DBG(...)
-#endif
 
 #define THREAD_STACK_SIZE    (1024 * 16)
 #define THREAD_PRIORITY      (180)
@@ -60,20 +52,38 @@
 
 #define DEFAULT_PUB_TIME 5
 
+#define ACK_DEBUG
+#define SELECT_TIMEOUT	10000 //timeout = 10s
+
+extern char* g_que_first;
+extern char ack_buffer[ACK_SET_LEN_MAX];
+extern r_queue_s rq;
+
+qapi_TIMER_handle_t que_timer_handle;
+qapi_TIMER_define_attr_t que_timer_def_attr;
+qapi_TIMER_set_attr_t que_timer_set_attr;
+
+
+
 /*===========================================================================
                            Global variable
 ===========================================================================*/
 /* UDPClient dss thread handle */
 #ifdef QAPI_TXM_MODULE
 	static TX_THREAD *dss_thread_handle; 
+	static TX_THREAD *udp_thread_handle; 
 #else
 	static TX_THREAD _dss_thread_handle;
 	static TX_THREAD *ts_thread_handle = &_dss_thread_handle;
 #endif
 
 static unsigned char udp_dss_stack[THREAD_STACK_SIZE];
+static unsigned char udp_recv_stack[THREAD_STACK_SIZE];
+
 
 TX_EVENT_FLAGS_GROUP *udp_signal_handle;
+TX_EVENT_FLAGS_GROUP *udp_recv_handle;
+
 
 qapi_DSS_Hndl_t udp_dss_handle = NULL;	            /* Related to DSS netctrl */
 
@@ -93,63 +103,18 @@ TX_BYTE_POOL *byte_pool_udp;
 
 UCHAR free_memory_udp[UDP_BYTE_POOL_SIZE];
 
-/* uart rx tx buffer */
-static char *uart_rx_buff = NULL;	/*!!! should keep this buffer as 4K Bytes */
-static char *uart_tx_buff = NULL;
+/* used to send heartbeat */
+static int g_cmd_sockfd = -1;
+struct sockaddr_in server;
 
-/* uart config para*/
-static QT_UART_CONF_PARA uart_conf =
-{
-	NULL,
-	QT_UART_PORT_02,
-	NULL,
-	0,
-	NULL,
-	0,
-	115200
-};
+
+
+
+
 
 /*===========================================================================
                                FUNCTION
 ===========================================================================*/
-void udp_uart_dbg_init()
-{
-  	if (TX_SUCCESS != tx_byte_allocate(byte_pool_udp, (VOID *)&uart_rx_buff, 4*1024, TX_NO_WAIT))
-  	{
-  		IOT_DEBUG("tx_byte_allocate [uart_rx_buff] failed!");
-    	return;
-  	}
-
-  	if (TX_SUCCESS != tx_byte_allocate(byte_pool_udp, (VOID *)&uart_tx_buff, 4*1024, TX_NO_WAIT))
-  	{
-  		IOT_DEBUG("tx_byte_allocate [uart_tx_buff] failed!");
-    	return;
-  	}
-
-    uart_conf.rx_buff = uart_rx_buff;
-	uart_conf.tx_buff = uart_tx_buff;
-	uart_conf.tx_len = 4096;
-	uart_conf.rx_len = 4096;
-
-	/* debug uart init 			*/
-	uart_init(&uart_conf);
-	/* start uart receive */
-	uart_recv(&uart_conf);
-}
-void udp_uart_debug_print(const char* fmt, ...) 
-{
-	va_list arg_list;
-    char dbg_buffer[128] = {0};
-    
-	va_start(arg_list, fmt);
-    vsnprintf((char *)(dbg_buffer), sizeof(dbg_buffer), (char *)fmt, arg_list);
-    va_end(arg_list);
-		
-    qapi_UART_Transmit(uart_conf.hdlr, dbg_buffer, strlen(dbg_buffer), NULL);
-    qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_MSEC, true);   //50
-}
-
-
 /*
 @func
 	dss_net_event_cb
@@ -498,7 +463,7 @@ void atel_dataservice_thread(ULONG param)
 }
 
 /* begin: judge the msg type from server */
-MSG_TYPE_E msg_type(char *msg)
+SER_MSG_TYPE_E msg_type(char *msg)
 {
 	if(!strncmp(msg, "+SACK", 5))
 	{
@@ -513,19 +478,229 @@ MSG_TYPE_E msg_type(char *msg)
 }
 /* end: judge the msg type from server */
 
+
+/* data(from server) process entry  */
+
+void proc_ser_str(char * sk_buf)
+{
+	
+	char *p_cmd = NULL;
+	SER_MSG_TYPE_E msg_t = 0xff;
+	
+	/* msg type ? */
+	msg_t = msg_type(sk_buf);
+	/* go with cmd process flow */
+	if(SCMD_TYPE_E == msg_t)
+	{
+		/* allocate mem for each cmd due to asynchronous */
+		if (TX_SUCCESS != tx_byte_allocate(byte_pool_udp, (VOID *)&p_cmd, strlen(sk_buf), TX_NO_WAIT))
+		{
+			atel_dbg_print("tx_byte_allocate [p_cmd] failed!");
+			//return;
+		}
+
+		/* show the allocate addr */
+		atel_dbg_print("[proc_ser_str]p_cmd addr ---> %p\n", p_cmd);
+		memset(p_cmd, 0, strlen(sk_buf));
+		memcpy(p_cmd, sk_buf, strlen(sk_buf));
+		
+		atel_dbg_print("[p_cmd] content ---> %s\n", p_cmd);
+
+		/* enqueue the cmd string */
+		enqueue(p_cmd);
+	}
+	/* go with SACK process flow */
+	else if(SACK_TYPE_E)
+	{
+		/* under development */
+	}
+	else 
+	{
+		atel_dbg_print("invalid msg from server!");
+	}
+
+
+	/* send msg to process flow */
+}
+
+
+void proc_ser_str_v2(char * sk_buf)
+{
+	
+	char *p_cmd = sk_buf;
+	SER_MSG_TYPE_E msg_t = 0xff;
+	
+	/* msg type ? */
+	msg_t = msg_type(p_cmd);
+	/* go with cmd process flow */
+	if(SCMD_TYPE_E == msg_t)
+	{
+	
+		atel_dbg_print("[proc_ser_str_v2]sk_buf addr ---> %p\n", p_cmd);
+
+		/* parse sk_buff */
+		cmd_parse_entry(p_cmd);
+	}
+	/* go with SACK process flow */
+	else if(SACK_TYPE_E == msg_t)
+	{
+		/* under development */
+	}
+	else 
+	{
+		atel_dbg_print("invalid msg from server!");
+	}
+
+
+	/* send msg to process flow */
+}
+
+void que_cb_timer()
+{
+	char *buff = "keep connection alive";
+	int sent_len = -1;
+	/* keep connection alive */
+	sent_len = qapi_sendto(g_cmd_sockfd, buff, strlen(buff), 0, (struct sockaddr *)&server, sizeof(struct sockaddr_in));
+	if(sent_len > 0)
+	{
+		atel_dbg_print("[keep connection], len: %d, data: %s\n", sent_len, buff);
+	}
+	
+	return;
+}
+
+void cmd_proc_timer_init(void)
+{
+	int status;
+
+	memset(&que_timer_def_attr, 0, sizeof(que_timer_def_attr));
+	que_timer_def_attr.cb_type	= QAPI_TIMER_FUNC1_CB_TYPE;
+	que_timer_def_attr.deferrable = false;
+	que_timer_def_attr.sigs_func_ptr = que_cb_timer;
+	que_timer_def_attr.sigs_mask_data = 0x11;
+	status = qapi_Timer_Def(&que_timer_handle, &que_timer_def_attr);
+	atel_dbg_print("[TIMER] status[%d]", status);
+
+	memset(&que_timer_set_attr, 0, sizeof(que_timer_set_attr));
+	que_timer_set_attr.reload = false;
+	que_timer_set_attr.time = 2;
+	que_timer_set_attr.unit = QAPI_TIMER_UNIT_MIN;
+	status = qapi_Timer_Set(que_timer_handle, &que_timer_set_attr);
+}
+
+
+/*
+@func
+	quec_dataservice_entry
+@brief
+	The entry of data service task.
+*/
+void udp_receive_thread(ULONG param)
+{
+	ULONG udp_event = 0;	
+	bool parse_state = FALSE;	
+	char recv_buff[ACK_SET_LEN_MAX];
+	int recv_len = -1;
+	int send_len = -1;
+	int32 tolen = sizeof(struct sockaddr_in);
+	
+
+	while (1)
+	{
+	
+		atel_dbg_print("[udp_receive_thread]---wait udp receive signal---");
+		/* Wait disconnect signal */
+		tx_event_flags_get(udp_recv_handle, UDP_SIG_EVT_RECV_E, TX_AND_CLEAR, &udp_event, TX_WAIT_FOREVER);
+		
+		atel_dbg_print("[udp_receive_thread]---get udp receive signal---");
+		
+		if (udp_event & UDP_SIG_EVT_RECV_E)
+		{
+			
+			memset(recv_buff, 0, sizeof(recv_buff));
+
+			/* receive with nonblock */
+			recv_len = qapi_recvfrom(g_cmd_sockfd, recv_buff, ACK_SET_LEN_MAX, 0, (struct sockaddr *)&server, &tolen);
+			
+			/* Reveived data */
+			atel_dbg_print("[UDP Client]@len[%d], @Recv: %s\n", recv_len, recv_buff);
+			if (recv_len > 0)
+			{
+				proc_ser_str_v2(recv_buff);
+				parse_state = TRUE;
+			}
+						
+			/* move the flow only when parse state is set */
+			if(parse_state == TRUE)
+			{
+				atel_dbg_print("[udp_receive_thread]ack_buffer[%p, %s]\n", ack_buffer, ack_buffer);
+
+				/* send ack to server */
+				send_len = qapi_sendto(g_cmd_sockfd, ack_buffer, strlen(ack_buffer), 0, (struct sockaddr *)&server, tolen);
+				
+				if (send_len > 0)
+				{
+					atel_dbg_print("Client send ack success, len: %d, data: %s\n", send_len, ack_buffer);
+
+					/* clear ack buffer */
+					memset(ack_buffer, 0, sizeof(ack_buffer));
+				}
+
+				/* clear the parse state */
+				parse_state = FALSE;
+			}
+		}
+	}
+
+	atel_dbg_print("udp_receive_thread exit!");
+	return;
+}
+
+
 static int start_udp_session(void)
 {
 	int  sock_fd = -1;
 	int  sent_len = 0;
 	int  recv_len = 0;
-	char buff[SENT_BUF_SIZE];
-	char *p_cmd = NULL;
-	MSG_TYPE_E msg_t = 0xff;
+	int  ret = 0xff;
+	int32   sig_mask;
+	uint8 hb_cnt = 0;
+	char send_buff[SENT_BUF_SIZE] = {0};
+	char recv_buff[RECV_BUF_SIZE] = {0};
+	//char recv_buff[SENT_BUF_SIZE];	
+	bool parse_state = FALSE;
+    fd_set  fset;
+	
 	struct sockaddr_in to;
 	int32 tolen = sizeof(struct sockaddr_in);
 
+	
+    /* Create event signal handle and clear signals */
+    txm_module_object_allocate(&udp_recv_handle, sizeof(TX_EVENT_FLAGS_GROUP));
+	tx_event_flags_create(udp_recv_handle, "udp receive process thread");
+	tx_event_flags_set(udp_recv_handle, 0x0, TX_AND);
+	
+	sig_mask = UDP_SIG_EVT_RECV_E;
+
 	do
 	{
+		#if 0
+		if (TX_SUCCESS != txm_module_object_allocate((VOID *)&udp_thread_handle, sizeof(TX_THREAD))) 
+		{
+			return -1;
+		}
+
+		/* begin: start sub thread for receive data from server */
+		ret = tx_thread_create(udp_thread_handle, "udp client receive thread", udp_receive_thread, NULL,
+								udp_recv_stack, THREAD_STACK_SIZE, THREAD_PRIORITY, THREAD_PRIORITY, TX_NO_TIME_SLICE, TX_AUTO_START);
+		if (ret != TX_SUCCESS)
+		{
+			atel_dbg_print("Thread creation failed\n");
+		}
+		/* end */
+		#endif
+	
+		//descripter for cmd process
 		sock_fd = qapi_socket(AF_INET, DEF_SRC_TYPE, 0);
 		if (sock_fd < 0)
 		{
@@ -534,86 +709,187 @@ static int start_udp_session(void)
 		}
 		
 		atel_dbg_print("<-- Create socket[%d] success -->\n", sock_fd);
-		memset(buff, 0, sizeof(buff));
+		memset(send_buff, 0, sizeof(send_buff));
 		memset(&to, 0, sizeof(to));
 		to.sin_family = AF_INET;
 		to.sin_port = _htons(DEF_SRV_PORT);
 		to.sin_addr.s_addr = inet_addr(DEF_SRV_ADDR);
 
+		#if 0
 		/* Connect to UDP server */
 		if (-1 == qapi_connect(sock_fd, (struct sockaddr *)&to, tolen))
 		{
 			atel_dbg_print("Connect to servert error\n");
 			break;
 		}
+		#endif
+
 		
 		atel_dbg_print("<-- Connect to server[%s][%d] success -->\n", DEF_SRV_ADDR, DEF_SRV_PORT);
 
-		strcpy(buff, "Hello server, This is an UDP client!");
+		strcpy(send_buff, "Hello server, This is an UDP client!");
 		
 		/* Start sending data to server after connecting server success */
-		sent_len = qapi_sendto(sock_fd, buff, SENT_BUF_SIZE, 0, (struct sockaddr *)&to, tolen);
+		sent_len = qapi_sendto(sock_fd, send_buff, strlen(send_buff), 0, (struct sockaddr *)&to, tolen);
 		if (sent_len > 0)
 		{
-			atel_dbg_print("Client send data success, len: %d, data: %s\n", sent_len, buff);
+			atel_dbg_print("Client send data success, len: %d, data: %s\n", sent_len, send_buff);
 		}
 
-		/* Block and wait for respons */
+
+		/* I/O multiplexing */
 		while (1)
 		{
-			memset(buff, 0, sizeof(buff));
+			atel_dbg_print("---receive data process entry---");
+			qapi_fd_zero(&fset);
+			qapi_fd_set(sock_fd, &fset);
+			ret = qapi_select(&fset, NULL, NULL, SELECT_TIMEOUT);
+			if(ret > 0)
+			{
+
+				atel_dbg_print("---have data in read set---");
+				/* IO data for read */
+				if(FD_IS_MEM_E == qapi_fd_isset(sock_fd, &fset))
+				{
+					#if 0
+					atel_dbg_print("---udp receive signal triggered---");
+					#ifdef UDP_RECV_DBG
+					g_cmd_sockfd = sock_fd;
+					memcpy(&server, &to, sizeof(struct sockaddr_in));
+					
+					/* send event to sub thread to process received data */
+					tx_event_flags_set(udp_recv_handle, UDP_SIG_EVT_RECV_E, TX_OR);
+					
+					atel_dbg_print("[start_udp_session]---udp receive ready---");
+					#endif
+					#else 
+					//atel_dbg_print("[start_udp_session]---start process received data---");
+					memset(recv_buff, 0, sizeof(recv_buff));
+					recv_len = qapi_recvfrom(sock_fd, recv_buff, RECV_BUF_SIZE, 0, (struct sockaddr*)&to, &tolen);
+					
+					if (recv_len > 0)
+					{
+						proc_ser_str_v2(recv_buff);
+						parse_state = TRUE;
+					}
+								
+					/* move the flow only when parse state is set */
+					if(parse_state == TRUE)
+					{
+						atel_dbg_print("[udp_receive_thread]ack_buffer[%p, %s]\n", ack_buffer, ack_buffer);
+					
+						/* send ack to server */
+						sent_len = qapi_sendto(sock_fd, ack_buffer, strlen(ack_buffer), 0, (struct sockaddr *)&to, tolen);
+						
+						if (sent_len > 0)
+						{
+							atel_dbg_print("Client send ack success, len: %d, data: %s\n", sent_len, ack_buffer);
+					
+							/* clear ack buffer */
+							memset(ack_buffer, 0, sizeof(ack_buffer));
+						}
+					
+						/* clear the parse state */
+						parse_state = FALSE;
+					}
+
+					#endif
+					
+					#if 0 
+					if (recv_len > 0)
+					{
+
+						/* Reveive data and response*/
+						atel_dbg_print("[UDP Client]@len[%d], @Recv: %s\n", recv_len, recv_buff);
+
+						memset(send_buff, 0, SENT_BUF_SIZE);
+						snprintf(send_buff, SENT_BUF_SIZE, "[UDP Server]received %d bytes data", recv_len);
+						sent_len = qapi_sendto(sock_fd, send_buff, strlen(send_buff), 0, (struct sockaddr*)&to, tolen);
+						if(sent_len < 0)
+						{
+							atel_dbg_print("UDP Server send data failed: %d\n", sent_len);
+						}
+					}
+					#endif
+				}
+				else
+				{
+					atel_dbg_print("---cur sock_fd not in fset---");
+				}
+			}
+			else if(ret == 0)
+			{
+				atel_dbg_print("---opps, select timeout, [hb_cnt]%d---", hb_cnt);
+				
+				/* send heart beat every 2 min */
+				if(hb_cnt++ == 2)
+				{
+					atel_dbg_print("---send heartbeat---");
+					sent_len = qapi_sendto(sock_fd, "heartbeat", strlen("heartbeat"), 0, (struct sockaddr *)&to, tolen);
+					
+					if (sent_len > 0)
+					{
+						atel_dbg_print("Client send heartbeat, len: %d, data: %s\n", sent_len, "heartbeat");
+					}
+				
+					hb_cnt = 0;
+				}
+			}
+			
+		
+		    #if 0
+			memset(recv_buff, 0, sizeof(recv_buff));
 
 			/* receive with nonblock */
-			recv_len = qapi_recvfrom(sock_fd, buff, SENT_BUF_SIZE, MSG_DONTWAIT, (struct sockaddr *)&to, &tolen);
+			recv_len = qapi_recvfrom(sock_fd, recv_buff, ACK_SET_LEN_MAX, 0, (struct sockaddr *)&to, &tolen);
+			
+			/* Reveived data */
+			atel_dbg_print("[UDP Client]@len[%d], @Recv: %s\n", recv_len, recv_buff);
 			if (recv_len > 0)
 			{
-				if (0 == strncmp(buff, "Exit", 4))
+				//proc_ser_str(buff);
+				proc_ser_str_v2(send_buff);
+				/* set parse flow state */
+				parse_state = TRUE;
+		
+			}
+			
+			/* display the content of queue */
+			//show_queue_cont();
+			
+			#ifdef ACK_DEBUG
+			/* move the flow only when parse state is set */
+			if(parse_state == TRUE)
+			{
+				/* got the first element */
+				//g_que_first = get_first_ele();
+				//atel_dbg_print("[start_udp_session]the first ele addr is %p\n", g_que_first);
+				//cmd_parse_entry(g_que_first);
+				atel_dbg_print("[UDP Client]ack_buffer[%p, %s]\n", ack_buffer, ack_buffer);
+
+				#if 1
+				/* send ack to server */
+				sent_len = qapi_sendto(sock_fd, ack_buffer, strlen(ack_buffer), 0, (struct sockaddr *)&to, tolen);
+				
+				if (sent_len > 0)
 				{
-					qapi_socketclose(sock_fd);
-					sock_fd = -1;
-					tx_event_flags_set(udp_signal_handle, DSS_SIG_EVT_DIS_E, TX_OR);
-					atel_dbg_print("UDP Client Exit!!!\n");
-					break;
+					atel_dbg_print("Client send ack success, len: %d, data: %s\n", sent_len, ack_buffer);
+
+					/* clear ack buffer */
+					memset(ack_buffer, 0, sizeof(ack_buffer));
 				}
 
-				/* Reveived data */
-				atel_dbg_print("[UDP Client]@len[%d], @Recv: %s\n", recv_len, buff);
+				/* dequeu cmd */
+				//dequeue();
+				#endif
 
-				/* msg type ? */
-				msg_t = msg_type(buff);
-
-				/* +SACK msg */
-
-				/* cmd msg */
-
-				/* not support */
-
-				/* allocate mem for each cmd due to asynchronous */
-				if (TX_SUCCESS != tx_byte_allocate(byte_pool_udp, (VOID *)&p_cmd, strlen(buff), TX_NO_WAIT))
-			  	{
-			  		atel_dbg_print("tx_byte_allocate [p_cmd] failed!");
-			    	//return;
-			  	}
-
-				/* show the allocate addr */
-				atel_dbg_print("[start_udp_session]p_cmd addr ---> %p\n", p_cmd);
-				memset(p_cmd, 0, strlen(buff));
-				memcpy(p_cmd, buff, strlen(buff));
-
-				/* enqueue the cmd */
-				enqueue(p_cmd);
-
-				/* send msg to process flow */
-
+				/* clear the parse state */
+				parse_state = FALSE;
 			}
-			else //server send no cmd or SACK msg
-			{
-				/* receive msg from main thread */
-				//tx_queue_receive(TX_QUEUE * queue_ptr, VOID * destination_ptr, ULONG wait_option);
-				dequeue();
-			}
+			#endif
+			#endif
 
-			qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_MSEC, true);
+			//qapi_Timer_Sleep(1000, QAPI_TIMER_UNIT_MSEC, true);
 		}
 	} while (0);
 
@@ -639,7 +915,7 @@ int atel_udpclient_entry(void)
 	int32   sig_mask;
 
 	/* client task start */
-    atel_dbg_print("UDPClient Task Start...\n");
+    atel_dbg_print("udp client thread Start...\n");
 
     /* Create a byte memory pool. */
     txm_module_object_allocate(&byte_pool_udp, sizeof(TX_BYTE_POOL));

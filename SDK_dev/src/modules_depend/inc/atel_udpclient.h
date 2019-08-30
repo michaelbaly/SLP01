@@ -37,6 +37,16 @@
 
 #define RECV_BUF_SIZE   (128)
 #define SENT_BUF_SIZE   (128)
+#define ACK_SET_LEN_MAX		256
+
+
+/* specify ack len to 256 */
+#undef SEND_BUFF_SIZE
+#define SEND_BUF_SIZE	ACK_SET_LEN_MAX
+
+#define R_QUEUE_SIZE		40
+
+
 
 #define SLEEP_30S	    (30000)
 #define TIMER_1MIN		(60000)
@@ -82,11 +92,35 @@ typedef enum DSS_SIG_EVENTS
 	DSS_SIG_EVT_MAX_E		= LEFT_SHIFT_OP(5)
 } DSS_Signal_Evt_e;
 
+typedef enum UDP_SIG_EVENTS
+{
+	UDP_SIG_EVT_RECV_E		= LEFT_SHIFT_OP(0),
+	UDP_SIG_EVT_NO_RECV_E	= LEFT_SHIFT_OP(1),
+	UDP_SIG_EVT_CONN_E		= LEFT_SHIFT_OP(2),
+	UDP_SIG_EVT_DIS_E		= LEFT_SHIFT_OP(3),
+	UDP_SIG_EVT_EXIT_E		= LEFT_SHIFT_OP(4),
+	UDP_SIG_EVT_MAX_E		= LEFT_SHIFT_OP(5)
+} UDP_Signal_Evt_e;
+
+
 typedef enum SER_MSG_TYPE{
 	SCMD_TYPE_E = 0,
 	SACK_TYPE_E,
 	INVALID_TYPE_E
 }SER_MSG_TYPE_E;
+
+typedef enum {
+	FD_NOT_MEM_E = 0,
+	FD_IS_MEM_E,
+}SELECT_RET;
+
+
+typedef struct r_queue {
+	char* p_ack[R_QUEUE_SIZE];
+	int front;
+	int rear;
+}r_queue_s;
+
 
 /*===========================================================================
                              DECLARATION

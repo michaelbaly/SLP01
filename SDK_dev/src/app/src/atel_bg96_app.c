@@ -62,6 +62,8 @@ boolean g_timer_switch = FALSE;
 static boolean g_sim_counter = 0;
 /* end */
 
+static int main_task_run_cnt = 0;
+
 
 //static TX_EVENT_FLAGS_GROUP gps_file_handle;
 
@@ -106,11 +108,6 @@ subtask_config_t mdm_ble_at_config ={
 	atel_at_frame_thread_stack, ATEL_AT_FRAME_THREAD_STACK_SIZE, ATEL_AT_FRAME_THREAD_PRIORITY
 	
 };
-
-/* begin: rq for cmd from server */
-r_queue_s rq;
-/* end */
-
 
 
 
@@ -360,7 +357,7 @@ void ig_timer_init(void)
 	atel_dbg_print("[TIMER] status[%d]", status);
 
 	memset(&timer_set_attr, 0, sizeof(timer_set_attr));
-	timer_set_attr.reload = 10;
+	timer_set_attr.reload = false;
 	timer_set_attr.time = 10;
 	timer_set_attr.unit = QAPI_TIMER_UNIT_SEC;
 	status = qapi_Timer_Set(timer_handle, &timer_set_attr);
@@ -390,7 +387,7 @@ void system_init(void)
 	udp_service_start();
 	
 	/* gps service bring up */
-    gps_service_start();
+    //gps_service_start();
 	
 	return;
 }
@@ -489,7 +486,11 @@ void ig_off_process()
 	UINT active = 0xff;
 	ULONG remaining_ticks = 0;
 	ULONG reschedule_ticks = 0;
-	TX_TIMER * next_timer;
+	UINT status = 0;
+    uint32 message_size;
+	//TASK_COMM qt_main_task_comm;
+
+	
 	#if 0
 	/* whether enable MSO feature or not */
 	if(motion_status && cell_coverage && gps_fix_valid)
@@ -514,7 +515,7 @@ void ig_off_process()
 		/* send signal to main task when ignition status switched */
 		if (HIGH == relay_from_ble())
 		{
-			atel_dbg_print("[igition]off ---> on!");
+			atel_dbg_print("[ig_off_process]off ---> on!");
 			tx_event_flags_set(ig_switch_signal_handle, IG_SWITCH_ON_E, TX_OR);
 			
 			/* terminate ig off data flow */
@@ -522,6 +523,24 @@ void ig_off_process()
 		}
 
 
+		/* begin: got msg from udp client */
+		#ifdef MSG_QUEUE_DBG
+		memset(&qt_main_task_comm, 0, sizeof(qt_main_task_comm));
+
+		/* rec msg from udp client task */
+		status = tx_queue_receive(tx_queue_handle, &qt_main_task_comm, TX_WAIT_FOREVER);
+		
+		if(TX_SUCCESS != status)
+		{
+			atel_dbg_print("[ig_off_process] tx_queue_receive failed with status %d", status);
+		}
+		else
+		{
+		   atel_dbg_print("[ig_off_process]tx_queue_receive ok with status %d", status);
+		}
+		#endif
+		/* end: got msg from udp client */
+		
 		qapi_Timer_Sleep(5, QAPI_TIMER_UNIT_SEC, true);
 
 	}
@@ -563,7 +582,7 @@ void ig_on_process(IG_ON_RUNNING_MODE_E mode)
 		/* send signal to main task when ignition status switch to ignition Off */
 		if (LOW == relay_from_ble())
 		{
-			atel_dbg_print("[igition]on ---> off!");
+			atel_dbg_print("[ig_on_process]on ---> off!");
 			tx_event_flags_set(ig_switch_signal_handle, IG_SWITCH_OFF_E, TX_OR);
 			break;
 		}
@@ -611,6 +630,10 @@ void gpio_init(void)
 void daily_heartbeat_rep(void)
 {
 	/* init the timer: reload timer */
+	//base_timer_init();
+
+	/* report msg every 2 minute to make dgram connection alive */
+	
 
     /* report gps location once timer expires */
 
@@ -647,7 +670,7 @@ int quectel_task_entry(void)
 	gpio_init();
 
 	/* ignition timer init */
-	ig_timer_init();
+	//ig_timer_init();
 
 #ifndef IF_SERVER_DEBUG
 	atel_dbg_print("cmd_parse_start......");
@@ -677,20 +700,23 @@ int quectel_task_entry(void)
 	tx_event_flags_create(ig_switch_signal_handle, "ignition status tracking");
 	tx_event_flags_set(ig_switch_signal_handle, 0x0, TX_AND);
 
-	
+	#if 0
 	/* enter ig off flow when system normal up */
 	if (TRUE == normal_start)
 	{
 		atel_dbg_print("[ignition] enter init ig off process!");
 		ig_off_process();
 	}
+	#endif
 
 	
 	atel_dbg_print("Entering mode switch flow");
 	
 	while(1)
 	{
-		atel_dbg_print("switch flow running...");
+		atel_dbg_print("[quectel_task_entry]main task running %d times", main_task_run_cnt++);
+
+		#if 0
 		/* get switch event */
 		tx_event_flags_get(ig_switch_signal_handle, sig_mask, TX_OR, &switch_event, TX_WAIT_FOREVER);
 		
@@ -720,8 +746,9 @@ int quectel_task_entry(void)
 
 		/* clear all events */
 		//tx_event_flags_set(&ig_switch_signal_handle, 0x0, TX_AND);
+		#endif
 
-		qapi_Timer_Sleep(5, QAPI_TIMER_UNIT_SEC, true);
+		qapi_Timer_Sleep(2, QAPI_TIMER_UNIT_SEC, true);
 
 	}
 	#endif 

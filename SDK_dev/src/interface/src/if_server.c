@@ -5,9 +5,8 @@
 #include <stdint.h>
 #include <errno.h>
 #include <string.h>
-
+#include "txm_module.h"
 #include "if_server.h"
-//#include "cmd_type.h"
 
 
 
@@ -22,11 +21,10 @@
                            Global variable
 ===========================================================================*/
 
+/* begin: rq for cmd from server */
+r_queue_s rq;
+/* end */
 
-/*===========================================================================
-                               FUNCTION
-===========================================================================*/
-/* begin  */
 /* this contains apn/username/password */
 APN_INFO apn_info = { {0} };
 APN_INFO apn_data = { {0} };
@@ -34,6 +32,15 @@ APN_INFO apn_data = { {0} };
 ADC_INFO adc_info = { {0} };
 
 
+/* get first ele of the cmd queue */
+char *g_que_first = NULL;
+char ack_buffer[ACK_SET_LEN_MAX] = {0};
+
+
+/*===========================================================================
+                               FUNCTION
+===========================================================================*/
+/* begin  */
 void apn_info_init(APN_INFO *apn_data)
 {
 	strncpy(apn_data->apn, DFT_APN, strlen(DFT_APN));
@@ -92,6 +99,7 @@ bool apn_query(APN_INFO *apn_data)
 		return FALSE;
 	}
 
+	memset(apn_tmp, 0, sizeof(APN_INFO));
 	/* fill mem of apn_data */
 	strncpy(apn_tmp->apn, apn_info.apn, strlen(apn_info.apn));
 	strncpy(apn_tmp->apn_usrname, apn_info.apn_usrname, strlen(apn_info.apn_usrname));
@@ -192,7 +200,11 @@ CMD_PRO_ARCH_T cmd_pro_reg[TOTAL_CMD_NUM] = {
 /* init the ring queue */
 void rq_init()
 {
+	char cnt = 0;
+	
 	rq.front = rq.rear = 0;
+	while(cnt < R_QUEUE_SIZE)
+		rq.p_ack[cnt++] = NULL;
 }
 
 /* judge empty */
@@ -222,7 +234,7 @@ bool isfull(r_queue_s rq)
 }
 
 /* enqueue */
-void enqueue(char *packet)
+void enqueue(char *cmd)
 {
 	if(isfull(rq))
 	{
@@ -230,7 +242,7 @@ void enqueue(char *packet)
 		return;
 	}
 
-	rq.p_ack[rq.rear] = packet;
+	rq.p_ack[rq.rear] = cmd;
 	rq.rear = (rq.rear + 1) % R_QUEUE_SIZE;
 
 }
@@ -242,30 +254,35 @@ void dequeue()
 		atel_dbg_print("queue is empty\n");
 		return;
 	}
-	/* send packet via the socket */
-	//send_packet(sfd, rq.p_ack[rq.front]);
 
-	/* release packet buffer */
-	/* show the allocate addr */
-	atel_dbg_print("[dequeue]rq.p_ack[rq.front] addr ---> %p\n", rq.p_ack[rq.front]);
+	atel_dbg_print("[dequeue]the release addr is %p\n", rq.p_ack[rq.front]);
+	/* release the allocated buff */
 	tx_byte_release(rq.p_ack[rq.front]);
 
 	/* move head pointer to next */
 	rq.front = (rq.front + 1) % R_QUEUE_SIZE;
+
 }
 
-
-/* enqueue the packet */
-void enq_ack(int sockfd, char *packet)
+char * get_first_ele()
 {
-	/* put each ack to ring queue */
-	enqueue(packet);
-
-	/* send msg to udp client to triger the dequeue which means send ack to server */
-	//tx_queue_send(TX_QUEUE * queue_ptr, VOID * source_ptr, ULONG wait_option);
-
-	return;
+	atel_dbg_print("[get_first_ele]the returned addr is %p\n", rq.p_ack[rq.front]);
+	return rq.p_ack[rq.front];
 }
+
+
+void show_queue_cont()
+{
+	char *tmp = rq.p_ack[rq.front];
+	
+	while(tmp)
+	{
+		atel_dbg_print("[cur_queue]%s", tmp);
+        rq.front++;
+		tmp = rq.p_ack[rq.front];
+	}
+}
+
 
 /* show apn info */
 void apn_info_show()
@@ -408,7 +425,7 @@ void build_ack(uint8 cmd_idx, bool cmd_type, bool status, void* cmd_rel_s)
 
 
 	/* aquery struct type */
-	p_arg cmd_rel_tmp = (p_arg*)cmd_rel_s;
+	p_arg cmd_rel_tmp = (p_arg)cmd_rel_s;
 	
 	//+ACK:APN,<IMEI>,<device_name>,<status>,<send_time>#
 
@@ -435,7 +452,7 @@ void build_ack(uint8 cmd_idx, bool cmd_type, bool status, void* cmd_rel_s)
 		use_len += strlen(EXEC_STATUS_ERROR) + 1;
 	}
 
-	/* if cmd_type is query */
+	/* query cmd_type */
 	if (!cmd_type)
 	{
 		/* extract each mem from the struct */
@@ -443,8 +460,8 @@ void build_ack(uint8 cmd_idx, bool cmd_type, bool status, void* cmd_rel_s)
 		/* fill mem of struct pointer */
 		for (; i < cmd_pro_reg[cmd_idx].ele_num; i++)
 		{
-			sprintf(ack_buffer + use_len, ",%s", cmd_rel_tmp);
-			use_len += strlen(cmd_rel_tmp) + 1;
+			sprintf(ack_buffer + use_len, ",%s", (char*)cmd_rel_tmp);
+			use_len += strlen((char*)cmd_rel_tmp) + 1;
 			cmd_rel_tmp++;
 		}
 
@@ -463,7 +480,8 @@ void build_ack(uint8 cmd_idx, bool cmd_type, bool status, void* cmd_rel_s)
 /* end */
 
 /* begin:interface with server */
-int cmd_parse_entry(char* sock_buf)
+/* [input] head ele of the cmd queue */
+int cmd_parse_entry(char* que_first)
 {
 	uint8 arg_cnt = 0;
 	uint8 status = 0xff;
@@ -475,14 +493,11 @@ int cmd_parse_entry(char* sock_buf)
 	APN_INFO apn_data = { {0} };
 	p_arg arg_each = NULL;
 
-
-	/* enqueue server command */
-	enqueue(sock_buf);
-
 	memset(arg_list, 0, sizeof(arg_list));
-	//arg_cnt = para_cmd_str(cmd_set, arg_list, &cmd_type);
+		
+	//atel_dbg_print("[cmd_parse_entry]: %p\n", rq.p_ack[rq.front]);
 	
-	arg_cnt = parse_cmd_str(cmd_set, arg_list, &cmd_type);
+	arg_cnt = parse_cmd_str(que_first, arg_list, &cmd_type);
 
 	atel_dbg_print("cmd_type: %d\n", cmd_type);
 	atel_dbg_print("arg_cnt: %d\n", arg_cnt);
@@ -514,7 +529,7 @@ int cmd_parse_entry(char* sock_buf)
 			
 			atel_dbg_print("set command type\n");
 			/* execute the registered set function */
-			arg_each = arg_list[0];
+			arg_each = (p_arg)arg_list[0];
 			status = cmd_pro_reg[index].cmd_set_f(arg_each, arg_cnt);
 			break;
 
@@ -529,70 +544,15 @@ int cmd_parse_entry(char* sock_buf)
 	/* apn info */
 	apn_info_show();
 
-
-	/* query result test */
-#ifndef UNIT_TEST
-	memset(arg_list, 0, sizeof(arg_list));
-	arg_cnt = para_cmd_str(cmd_query, arg_list, &cmd_type);
-
-	atel_dbg_print("cmd_type: %d\n", cmd_type);
-	atel_dbg_print("arg_cnt: %d\n", arg_cnt);
-
-	for (; i < arg_cnt; i++)
-	{
-		atel_dbg_print("arg_list[arg_cnt]: %s\n", *(arg_list + i));
-	}
-
-	/* compound each arg for different use */
-
-	/* return if password is invalid */
-	if (!cmd_match(arg_list[0], &index) || strncmp(g_sys_passwd, arg_list[1], SYS_PASSWD_MAX_LEN))
-	{
-		atel_dbg_print("error cmd or password!\n");
-		return ERROR_CMD_PWD_E;
-	}
-
-#ifndef ATEL_DEBUG
-	/* aquery the struct type */
-	
-#endif
-
-	/* continue the flow */
-#if 1
-	switch (cmd_type)
-	{
-		case QUERY_CMD_E:
-			atel_dbg_print("query command type\n");
-			status = cmd_pro_reg[index].cmd_get_f(cmd_pro_reg[index].cmd_rel_st);
-			break;
-
-		case SET_CMD_E:
-			/* execute the registered set function */
-			arg_each = arg_list[0];
-			status = cmd_pro_reg[index].cmd_set_f(arg_each, arg_cnt);
-			break;
-
-		default:
-		{
-			atel_dbg_print("unknown command type\n");
-			break;
-		}
-
-	}
-#endif
-	
-
-#endif
-
 	/* build ack for server */
 	build_ack(index, cmd_type, status, cmd_pro_reg[index].cmd_rel_st);
 
 	
-	atel_dbg_print("build frame over\n");
+	atel_dbg_print("frame build over\n");
 	//enqueue the ack
 	
 	
-	return 0;
+	return TRUE;
 
 }
 

@@ -96,6 +96,7 @@ typedef enum {
 }IG_SWITCH_STATUS_E;
 /* end */
 
+
 void loc_info_transform(qapi_Location_t location, char* trans_buf);
 int ota_service_start(void);
 

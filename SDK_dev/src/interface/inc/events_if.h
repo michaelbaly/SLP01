@@ -205,7 +205,7 @@ typedef enum {
 /* separator: ';' */
 typedef struct rep_gps_S {
 	
-	char sate_no[2];		//by 4 to fix
+	char sate_no[2];		//have 4 to fix
 	char time_stamp[12];	//UTC time "YYMMDDhhmmss"
 	char lati[9];
 	char logi[10];
@@ -277,6 +277,52 @@ typedef enum {
 *                           FUNCTION DECLARATION
 ***************************************************************************/
 extern void atel_dbg_print(const char* fmt, ...);
+
+
+
+/* begin: prio queue */
+
+#define PRIO_MAX	3
+#define NODE_NUM_MAX 20
+int prio_arr[PRIO_MAX];
+
+/* report node in a hash bucket */
+typedef struct node_s {
+	int key;
+	int prio;
+	struct node_s* next;
+}node;
+
+/* list of nodes in a hash bucket */
+typedef struct pnode_list_s {
+	int prio;
+	node* ele;
+}pnode_list;
+
+typedef struct que_stat_s {
+	int enque;
+	int deque;
+	int wait_time;
+}que_stat;
+
+/* overall table of priority list */
+typedef struct queue_table_s {
+	pnode_list list_entry[PRIO_MAX]; //number of list
+	node* last_ele[PRIO_MAX];
+	node* pool;
+	node* free_pool;
+	int entry_cnt;
+	//pthread_mutex_t lock;
+	TX_MUTEX lock;
+	//pthread_cond_t cv;
+	TX_EVENT_FLAGS_GROUP cv;
+	bool is_avail;
+	que_stat* stat;
+}que_table;
+
+
+/* end: prio queue */
+
 
 
 

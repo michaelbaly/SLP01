@@ -40,17 +40,6 @@ static uint32 gps_tracking_id;
 #define LOCATION_TRACKING_RSP_FAIL_BIT (0x1 << 2)
 qapi_Location_t location;
 
-static char tx_buff[4096];
-QT_UART_CONF_PARA uart1_conf =
-{
-	NULL,
-	QT_UART_PORT_02,
-	tx_buff,
-	sizeof(tx_buff),
-	NULL,
-	0,
-	115200
-};
 #define GPS_USER_BUFFER_SIZE 4096
 static uint8_t GPSuserBuffer[GPS_USER_BUFFER_SIZE];
 qapi_loc_client_id loc_clnt;
@@ -64,12 +53,12 @@ LOCATION API REGISTERED CALLBACKS
 static void location_capabilities_callback(qapi_Location_Capabilities_Mask_t capabilities)
 {
 
-    qt_uart_dbg(uart1_conf.hdlr,"Location mod has tracking capability:%d\n",capabilities);
+    atel_dbg_print("Location mod has tracking capability:%d\n",capabilities);
 }
 
 static void location_response_callback(qapi_Location_Error_t err, uint32_t id)
 {
-    qt_uart_dbg(uart1_conf.hdlr,"LOCATION RESPONSE CALLBACK err=%u id=%u", err, id); 
+    atel_dbg_print("LOCATION RESPONSE CALLBACK err=%u id=%u", err, id); 
 	if(err == QAPI_LOCATION_ERROR_SUCCESS)
 	{
 		tx_event_flags_set(gps_signal_handle, LOCATION_TRACKING_RSP_OK_BIT, TX_OR);	
@@ -116,16 +105,15 @@ void location_init(void)
     ret = qapi_Loc_Init(&loc_clnt, &location_callbacks);
     if (ret == QAPI_LOCATION_ERROR_SUCCESS)
     {
-        qt_uart_dbg(uart1_conf.hdlr,"LOCATION_INIT SUCCESS");
+        atel_dbg_print("LOCATION_INIT SUCCESS");
     }
     else
     {
-        qt_uart_dbg(uart1_conf.hdlr,"LOCATION_INIT FAILED");
-        
+        atel_dbg_print("LOCATION_INIT FAILED");
     }
     ret = (qapi_Location_Error_t)qapi_Loc_Set_User_Buffer(loc_clnt, (uint8_t*)GPSuserBuffer, GPS_USER_BUFFER_SIZE);
     if (ret != QAPI_LOCATION_ERROR_SUCCESS) {
-        qt_uart_dbg(uart1_conf.hdlr,"Set user buffer failed ! (ret %d)", ret);
+        atel_dbg_print("Set user buffer failed ! (ret %d)", ret);
     }
 }
 
@@ -146,44 +134,48 @@ int atel_gps_entry(void)
                                                 0};
     txm_module_object_allocate(&gps_signal_handle, sizeof(TX_EVENT_FLAGS_GROUP));
 	qapi_Timer_Sleep(1000, QAPI_TIMER_UNIT_MSEC, true);//need delay 1s, otherwise maybe there is no callback.
-	uart_init(&uart1_conf);
-    qt_uart_dbg(uart1_conf.hdlr,"QT# quectel_task_entry ~~~");  
+    atel_dbg_print("[atel_gps_entry] thread start ~~~");  
 	
     location_init();
     qapi_Loc_Start_Tracking(loc_clnt, &Location_Options, &gps_tracking_id);
 	tx_event_flags_get(gps_signal_handle, LOCATION_TRACKING_RSP_OK_BIT|LOCATION_TRACKING_RSP_FAIL_BIT, TX_OR_CLEAR, &signal, TX_WAIT_FOREVER);
 	if(signal&LOCATION_TRACKING_RSP_OK_BIT)
 	{
-		qt_uart_dbg(uart1_conf.hdlr,"wating for tracking...");
+		atel_dbg_print("[atel_gps_entry]wating for tracking...");
 	}
 	else if(signal&LOCATION_TRACKING_RSP_FAIL_BIT)
 	{
-		qt_uart_dbg(uart1_conf.hdlr,"start tracking failed");
+		atel_dbg_print("start tracking failed");
 		return -1;
 	}
 	while(1)
 	{
+	
+		atel_dbg_print("[atel_gps_entry]---in gps main flow---");
         tx_event_flags_get(gps_signal_handle, LOCATION_TRACKING_FIXED_BIT, TX_OR_CLEAR, &signal, TX_WAIT_FOREVER);
         if(signal & LOCATION_TRACKING_FIXED_BIT)
         {
-            qt_uart_dbg(uart1_conf.hdlr,"LAT: %d.%d LON: %d.%d ALT: %d.%d ACC: %d.%d",
+            atel_dbg_print("LAT: %d.%d LON: %d.%d ALT: %d.%d ACC: %d.%d",
             (int)location.latitude, ((int)(location.latitude*100000))%100000,
             (int)location.longitude, ((int)(location.longitude*100000))%100000,
             (int)location.altitude, ((int)(location.altitude*100))%100,
             (int)location.accuracy, ((int)(location.accuracy*100))%100);
 
-            qt_uart_dbg(uart1_conf.hdlr,"SPEED: %d.%d BEAR: %d.%d TIME: %llu FLAGS: %x",
+            atel_dbg_print("SPEED: %d.%d BEAR: %d.%d TIME: %llu FLAGS: %x",
             (int)location.speed, ((int)(location.speed*100))%100,
             (int)location.bearing, ((int)(location.bearing*100))%100,location.timestamp,
             location.flags);    
             count++;
         }
+
+		#if 0 // never exit gps service 
         if(count > 10)
         {
-             qt_uart_dbg(uart1_conf.hdlr,"Stop gps sucsess");
+             atel_dbg_print("Stop gps sucsess");
              location_deinit();
              break;
         }
+		#endif
 
     }
 	return 0;
