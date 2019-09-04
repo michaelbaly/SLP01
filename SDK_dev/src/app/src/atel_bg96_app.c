@@ -34,6 +34,10 @@
 #define ATEL_DEBUG
 #define IF_SERVER_DEBUG
 
+/* begin: queue for communicate */
+TX_QUEUE *evt_queue;
+
+/* end */
 
 qapi_TIMER_handle_t timer_handle;
 qapi_TIMER_define_attr_t timer_def_attr;
@@ -52,7 +56,7 @@ TX_TIMER gpio_sim = {0};
 
 
 /* begin: MSO feature */
-#define MSO_COUNTER_PRESET	5
+#define MSO_COUNTER_DEFAULT	5
 static char g_mso_counter = 0;
 /* end */
 
@@ -64,12 +68,32 @@ static boolean g_sim_counter = 0;
 
 static int main_task_run_cnt = 0;
 
+/* timer for daily report */
+TX_TIMER daily_rep;
+#define DFT_INTEVAL 30 //auto report interval(seconds) after system up
+//ULONG g_auto_intval = DFT_INTEVAL;
+//ULONG g_last_intval = DFT_INTEVAL;
+
+
 
 //static TX_EVENT_FLAGS_GROUP gps_file_handle;
 
 /* begin: for ignition status switch signal */
 TX_EVENT_FLAGS_GROUP *ig_switch_signal_handle;
 
+/* end */
+
+/* begin: for events detect */
+TX_EVENT_FLAGS_GROUP *events_signal_handle;
+TX_BYTE_POOL *byte_pool_event;
+#define EVENT_POOL_START 	(void*)0x500000
+#define FREE_MEM_SIZE		2048 //2M mem for msg process
+//const void * event_pool_start = EVENT_POOL_START;
+char event_pool_start[FREE_MEM_SIZE];
+
+
+#define MAX_EVENTS	30 //specify the total events which can extented in further
+void* event_que_handle = NULL;
 /* end */
 
 
@@ -128,6 +152,27 @@ void atel_dbg_print(const char* fmt, ...)
 
 	qapi_atfwd_send_urc_resp("ATEL", log_buf);
 	//qapi_Timer_Sleep(50, QAPI_TIMER_UNIT_MSEC, true);
+
+	return;
+}
+
+void atel_event_flag_set(MSG_TYPE_REL_E evt_bit)
+{
+	tx_event_flags_set(events_signal_handle, evt_bit, TX_OR);
+
+	return;
+}
+
+void atel_event_flag_clr(MSG_TYPE_REL_E evt_bit)
+{
+	tx_event_flags_set(events_signal_handle, ~evt_bit, TX_AND);
+
+	return;
+}
+
+void atel_event_flag_get_with_clr(MSG_TYPE_REL_E evt_bit, ULONG events)
+{
+	tx_event_flags_get(events_signal_handle, evt_bit, TX_AND_CLEAR, &events, TX_WAIT_FOREVER);
 
 	return;
 }
@@ -338,6 +383,18 @@ void cb_timer(ULONG gpio_phy)
 	{
 		g_sim_relay_ble = LOW;
 	}
+
+#ifdef IG_INT_REPORT
+	/* ignition status detect */
+	if(HIGH == get_ig_status())
+	{
+		g_sim_relay_ble = HIGH;
+	}
+	else 
+	{
+		g_sim_relay_ble = LOW;
+	}
+#endif
 	
 	return;
 }
@@ -357,8 +414,8 @@ void ig_timer_init(void)
 	atel_dbg_print("[TIMER] status[%d]", status);
 
 	memset(&timer_set_attr, 0, sizeof(timer_set_attr));
-	timer_set_attr.reload = false;
-	timer_set_attr.time = 10;
+	timer_set_attr.reload = 30;//reload inteval, periodicly triggered
+	timer_set_attr.time = 10;//first time that expire, only once
 	timer_set_attr.unit = QAPI_TIMER_UNIT_SEC;
 	status = qapi_Timer_Set(timer_handle, &timer_set_attr);
 }
@@ -384,7 +441,7 @@ void system_init(void)
 	//tcp_service_start();
 
 	/* udp service bring up */
-	udp_service_start();
+	//udp_service_start();
 	
 	/* gps service bring up */
     //gps_service_start();
@@ -473,7 +530,7 @@ IG_ON_RUNNING_MODE_E check_running_mode(char *cfg_path)
 void MSO_enable(void)
 {
 	/* init mso counter */
-    g_mso_counter = MSO_COUNTER_PRESET;
+    g_mso_counter = MSO_COUNTER_DEFAULT;
 
 	
 	return;
@@ -624,21 +681,75 @@ void gpio_init(void)
 	
 }
 
-/* heart beat report 
-   report interval is set by server through HEARTBEAT command
-*/
-void daily_heartbeat_rep(void)
+
+void report_func(ULONG timer_input)
 {
-	/* init the timer: reload timer */
-	//base_timer_init();
+	ULONG upt_intval;
+	/* use udp socket to report msg */
 
-	/* report msg every 2 minute to make dgram connection alive */
+	/* deactivate timer once remote server update interval */
+	if(!strcmp(g_auto_intval.intval, g_auto_intval_fix.intval))
+	{
+		
+		upt_intval = atoi(g_auto_intval.intval);
+		tx_timer_deactivate(&daily_rep);
+		qapi_Timer_Sleep(2, QAPI_TIMER_UNIT_TICK, true);
+		/* restart timer */
+		tx_timer_change(&daily_rep, upt_intval, upt_intval);
+		tx_timer_activate(&daily_rep);
+	}
+}
+/* func: daily heart beat report 
+*/
+void daily_report(void)
+{
+	ULONG status = 0xff;
+	ULONG cur_intval = 0xff;
+
+	/* timer init */
+	cur_intval = atoi(auto_intval_fix.intval);
+	/* create auto report timer with no start */
+	status = tx_timer_create(&daily_rep, "daily report", report_func, 0, DFT_INTEVAL, cur_intval, TX_AUTO_START);
+	if(TX_SUCCESS != status)
+	{
+		atel_dbg_print("[daily_report] tx_timer_create failed!");
+	}
 	
+	#if 0
+	/* check network status */
+	while(/* network !register */)
+	{
+		qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_MIN, true);
+	}
 
-    /* report gps location once timer expires */
+	status = tx_timer_activate(&daily_rep);
+	if(TX_SUCCESS != status)
+	{
+		atel_dbg_print("[daily_report] daily_rep activate failed!");
+	}
+	/* deactive timer when remote set g_auto_intval */
+	if(g_auto_intval != DFT_INTEVAL)
+	{
+		/* update current interval */
+		cur_intval = g_auto_intval;
+	}
+	#endif	
 
 	return;
 }
+
+/*
+@func
+  quectel_task_entry
+@brief
+  Entry function for task. 
+*/
+
+void event_det(void)
+{
+	
+}
+
 
 /*
 @func
@@ -655,7 +766,8 @@ int quectel_task_entry(void)
 	ULONG sig_mask = IG_SWITCH_OFF_E | IG_SWITCH_ON_E;
 	ULONG switch_event = 0;
 	char *sock_buf = NULL;
-	
+	UINT status = 0xff;
+	int msg_size;
 	/* wait 10sec for device startup */
 	qapi_Timer_Sleep(10, QAPI_TIMER_UNIT_SEC, true);
 
@@ -670,7 +782,7 @@ int quectel_task_entry(void)
 	gpio_init();
 
 	/* ignition timer init */
-	//ig_timer_init();
+	ig_timer_init();
 
 #ifndef IF_SERVER_DEBUG
 	atel_dbg_print("cmd_parse_start......");
@@ -680,27 +792,63 @@ int quectel_task_entry(void)
 
 	#ifdef ATEL_BG96_COM_BLE
 	/* register AT command framework to support communicate with BLE */
-	if (0 == bg96_com_ble_task())
+	if (TX_SUCCESS != bg96_com_ble_task())
 	{
-		atel_dbg_print("[atfwd] framwork successfully registered!");
+		atel_dbg_print("[atfwd] framwork register failed!");
 	}
 
 	#endif 
 
 	/* system init */
-	system_init();
+	//system_init();
 
 	/* daily heart beat report after system up */
 	daily_heartbeat_rep();
 
 	normal_start = TRUE;
 	
-	/* create signal handler to receive  */
+	/* create signal handler for detecting ig stauts  */
     txm_module_object_allocate(&ig_switch_signal_handle, sizeof(TX_EVENT_FLAGS_GROUP));
 	tx_event_flags_create(ig_switch_signal_handle, "ignition status tracking");
 	tx_event_flags_set(ig_switch_signal_handle, 0x0, TX_AND);
 
-	#if 0
+	/* create event signal for detecting events */
+    txm_module_object_allocate(&events_signal_handle, sizeof(TX_EVENT_FLAGS_GROUP));
+	tx_event_flags_create(events_signal_handle, "events signal");
+	tx_event_flags_set(events_signal_handle, 0x0, TX_AND);
+
+	/* create message queue to further process data report */
+	status = txm_module_object_allocate(&byte_pool_event, sizeof(TX_BYTE_POOL));
+  	if(status != TX_SUCCESS)
+  	{
+  		atel_dbg_print("[main thread] txm_module_object_allocate [byte_pool_event] failed, %d", status);
+  	}
+	status = tx_byte_pool_create(byte_pool_event, "event report pool", event_pool_start, FREE_MEM_SIZE);
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[quectel_task_entry]byte_pool_event create failed!");
+	}
+	
+	status = txm_module_object_allocate(&evt_queue, sizeof(TX_QUEUE));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate evt_queue failed, %d", status);
+	}
+	
+	status = tx_byte_allocate(byte_pool_event, (void **)&event_que_handle, QUEUE_NODE_MAX * sizeof(event_msg), TX_NO_WAIT);
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[quectel_task_entry] tx_byte_allocate event_msg failed");
+	}
+	/* to be msg_size 32-bit words long */
+	msg_size = sizeof(event_msg)/sizeof(uint32);
+	status = tx_queue_create(evt_queue, "event transmit", msg_size, event_que_handle, QUEUE_NODE_MAX * sizeof(event_msg));
+	if (TX_SUCCESS != status)
+	{
+		atel_dbg_print("[quectel_task_entry]tx_queue_create failed with status %d", status);
+	}
+
+	#if 1
 	/* enter ig off flow when system normal up */
 	if (TRUE == normal_start)
 	{
@@ -716,11 +864,11 @@ int quectel_task_entry(void)
 	{
 		atel_dbg_print("[quectel_task_entry]main task running %d times", main_task_run_cnt++);
 
-		#if 0
+		#if 1
 		/* get switch event */
 		tx_event_flags_get(ig_switch_signal_handle, sig_mask, TX_OR, &switch_event, TX_WAIT_FOREVER);
 		
-		atel_dbg_print("switch_event: %d,IG_S_OFF: %d, IG_S_ON: %d\n", switch_event, IG_SWITCH_OFF_E, IG_SWITCH_ON_E);
+		atel_dbg_print("switch_event: %d,IG_S_ON: %d, IG_S_ONIG_S_OFF: %d\n", switch_event, IG_SWITCH_ON_E, IG_SWITCH_OFF_E);
 		
 		/* ignition off */
 		if(switch_event&IG_SWITCH_OFF_E)
@@ -728,7 +876,7 @@ int quectel_task_entry(void)
 			#ifdef ATEL_DEBUG
 			atel_dbg_print("switch to ig off flow");
 			#endif
-			BIT_SET(bitmap.ig_off_e, IG_OFF_E); /* denote ig off event */
+			//BIT_SET(bitmap.ig_off_e, IG_OFF_E); /* denote ig off event */
 			tx_event_flags_set(ig_switch_signal_handle, ~IG_SWITCH_OFF_E, TX_AND);
 			ig_off_process();
 		}
@@ -737,7 +885,7 @@ int quectel_task_entry(void)
 			#ifdef ATEL_DEBUG
 			atel_dbg_print("switch to ig on flow");
 			#endif
-			BIT_SET(bitmap.ig_on_e, IG_ON_E); /* denote ig on event */
+			//BIT_SET(bitmap.ig_on_e, IG_ON_E); /* denote ig on event */
 			tx_event_flags_set(ig_switch_signal_handle, ~IG_SWITCH_ON_E, TX_AND);
 			/* mode detect */
 			ig_on_mode = check_running_mode(ATEL_IG_ON_RUNNING_MODE_CFG_FILE);

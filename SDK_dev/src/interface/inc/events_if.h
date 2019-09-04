@@ -14,6 +14,7 @@
 
 #if defined(__ATEL_BG96_APP__)
 
+#define SHIFT_L(n) (1UL<<n)
 
 typedef enum {
 	EVENT_E=0,
@@ -185,10 +186,13 @@ typedef enum {
 	SEC_CIR_GEO_OUT_E,
 	THD_CIR_GEO_IN_E,
 	THD_CIR_GEO_OUT_E,
-	FOR_CIR_GEO_IN_E,
+	
+#ifdef EVENT_EXTENSION
+	FOR_CIR_GEO_IN_E, 	//forth geofence break
 	FOR_CIR_GEO_OUT_E,
-	FIF_CIR_GEO_IN_E,
+	FIF_CIR_GEO_IN_E,	//fifth geofence break
 	FIF_CIR_GEO_OUT_E,
+#endif
 
 	FIR_POLY_GEO_IN_E,
 	FIR_POLY_GEO_OUT_E,
@@ -201,6 +205,47 @@ typedef enum {
 	
 	
 }MSG_TYPE_E;
+
+typedef enum {
+	AUTO_REPORT_EVT = 			SHIFT_L(0),
+	POWER_CUT_EVT = 			SHIFT_L(1),
+	IG_ON_EVT = 				SHIFT_L(2),
+	IG_OFF_EVT = 				SHIFT_L(3),
+	HEART_BEAT_EVT = 			SHIFT_L(4),
+	INTER_BATT_LOW_EVT = 		SHIFT_L(5),
+	G_SENSOR_ALIG_EVT = 		SHIFT_L(6),
+	ROLL_OVER_EVT = 			SHIFT_L(7),
+	HARSH_BRAKE_EVT = 			SHIFT_L(8),
+	HARSH_ACC_EVT = 			SHIFT_L(9),
+	IMPACT_EVT = 				SHIFT_L(10),
+	HARSH_SWERVE_EVT = 			SHIFT_L(11),
+	OVER_SPEED_EVT = 			SHIFT_L(12),
+	TOW_EVT = 					SHIFT_L(13),
+	HEADING_CHG_REP_EVT = 		SHIFT_L(14),
+	IDLING_REP_EVT = 			SHIFT_L(15),
+	POWER_RECOVER_EVT = 		SHIFT_L(16),
+	
+	FIR_CIR_GEO_IN_EVT = 		SHIFT_L(17),
+	FIR_CIR_GEO_OUT_EVT = 		SHIFT_L(18),
+	SEC_CIR_GEO_IN_EVT = 		SHIFT_L(19),
+	SEC_CIR_GEO_OUT_EVT = 		SHIFT_L(20),
+	THD_CIR_GEO_IN_EVT = 		SHIFT_L(21),
+	THD_CIR_GEO_OUT_EVT = 		SHIFT_L(22),
+	
+	FIR_POLY_GEO_IN_EVT = 		SHIFT_L(23),
+	FIR_POLY_GEO_OUT_EVT = 		SHIFT_L(24),
+	SEC_POLY_GEO_IN_EVT = 		SHIFT_L(25),
+	SEC_POLY_GEO_OUT_EVT = 		SHIFT_L(26),
+	
+	EXT_BATT_LOW_EVT = 			SHIFT_L(27),
+	VIR_IG_ON_EVT = 			SHIFT_L(28),
+	VIR_IG_OFF_EVT = 			SHIFT_L(29),
+}MSG_TYPE_REL_E;
+
+#define BITS_PER_BYTE		8
+#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
+#define BITS_TO_LONG(nr)	DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
+#define ATEL_BIT_MAP(name, bits)	unsigned long name[BITS_TO_LONG(bits)]
 
 /* separator: ';' */
 typedef struct rep_gps_S {

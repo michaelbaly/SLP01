@@ -57,8 +57,14 @@ typedef struct apn_info_s {
 	char apn_passwd[MAX_ARG_LEN];
 }APN_INFO;
 
-
 #define APN_ELE_NUM		sizeof(APN_INFO)/MAX_ARG_LEN
+
+typedef struct intval_info_s {
+	char intval[MAX_ARG_LEN];
+}intval_info;
+
+
+#define INTVAL_ELE_NUM		sizeof(intval_info)/MAX_ARG_LEN
 
 
 typedef struct adc_info_s {

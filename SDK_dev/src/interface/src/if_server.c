@@ -26,8 +26,12 @@ r_queue_s rq;
 /* end */
 
 /* this contains apn/username/password */
-APN_INFO apn_info = { {0} };
-APN_INFO apn_data = { {0} };
+APN_INFO apn_fix = { {0} };
+APN_INFO apn_tmp = { {0} };
+
+intval_info auto_intval_fix = {{0}};
+intval_info auto_intval_tmp = {{0}};
+ULONG auto_intval_last = DFT_INTEVAL;//default auto report interval
 
 ADC_INFO adc_info = { {0} };
 
@@ -55,12 +59,12 @@ bool apn_set(p_arg arg_each, uint8 arg_cnt)
 	p_arg arg_list = arg_each + ACTUAL_ARG_OFFSET;
 
 	/* clear apn info */
-	memset(&apn_info, 0, sizeof(apn_info));
+	memset(&apn_fix, 0, sizeof(apn_fix));
 
-	strncpy(apn_info.apn, arg_list, strlen(arg_list));
-	if (strncmp(apn_info.apn, arg_list, strlen(arg_list)))
+	strncpy(apn_fix.apn, arg_list, strlen(arg_list));
+	if (strncmp(apn_fix.apn, arg_list, strlen(arg_list)))
 	{
-		atel_dbg_print("g_apn:%s\n", apn_info.apn);
+		atel_dbg_print("g_apn:%s\n", apn_fix.apn);
 		return FALSE;
 	}
 
@@ -68,18 +72,18 @@ bool apn_set(p_arg arg_each, uint8 arg_cnt)
 	if (arg_cnt == ACTUAL_ARG_OFFSET + 3)
 	{
 		arg_list++;
-		strncpy(apn_info.apn_usrname, arg_list, strlen(arg_list));
-		if (strncmp(apn_info.apn_usrname, arg_list, strlen(arg_list)))
+		strncpy(apn_fix.apn_usrname, arg_list, strlen(arg_list));
+		if (strncmp(apn_fix.apn_usrname, arg_list, strlen(arg_list)))
 		{
-			atel_dbg_print("apn_usrname:%s\n", apn_info.apn_usrname);
+			atel_dbg_print("apn_usrname:%s\n", apn_fix.apn_usrname);
 			return FALSE;
 		}
 
 		arg_list++;
-		strncpy(apn_info.apn_passwd, arg_list, strlen(arg_list));
-		if (strncmp(apn_info.apn_passwd, arg_list, strlen(arg_list)))
+		strncpy(apn_fix.apn_passwd, arg_list, strlen(arg_list));
+		if (strncmp(apn_fix.apn_passwd, arg_list, strlen(arg_list)))
 		{
-			atel_dbg_print("apn_passwd:%s\n", apn_info.apn_passwd);
+			atel_dbg_print("apn_passwd:%s\n", apn_fix.apn_passwd);
 			return FALSE;
 		}
 
@@ -93,7 +97,7 @@ bool apn_query(APN_INFO *apn_data)
 	APN_INFO* apn_tmp = apn_data;
 
 	/* apn info valid ? */
-	if (!strlen(apn_info.apn) || (!strlen(apn_info.apn_usrname) && !strlen(apn_info.apn_passwd)))
+	if (!strlen(apn_fix.apn) || (!strlen(apn_fix.apn_usrname) && !strlen(apn_fix.apn_passwd)))
 	{
 		/* apn info invalid */
 		return FALSE;
@@ -101,18 +105,69 @@ bool apn_query(APN_INFO *apn_data)
 
 	memset(apn_tmp, 0, sizeof(APN_INFO));
 	/* fill mem of apn_data */
-	strncpy(apn_tmp->apn, apn_info.apn, strlen(apn_info.apn));
-	strncpy(apn_tmp->apn_usrname, apn_info.apn_usrname, strlen(apn_info.apn_usrname));
-	strncpy(apn_tmp->apn_passwd, apn_info.apn_passwd, strlen(apn_info.apn_passwd));
+	strncpy(apn_tmp->apn, apn_fix.apn, strlen(apn_fix.apn));
+	strncpy(apn_tmp->apn_usrname, apn_fix.apn_usrname, strlen(apn_fix.apn_usrname));
+	strncpy(apn_tmp->apn_passwd, apn_fix.apn_passwd, strlen(apn_fix.apn_passwd));
 
 
+	return TRUE;
+}
+
+bool interval_set(p_arg arg_each, uint8 arg_cnt)
+{
+	/* interval param offset */
+	p_arg arg_list = arg_each + ACTUAL_ARG_OFFSET;
+	ULONG cur_intval = 0xff;
+	//ULONG last_intval = 0xff;
+
+	cur_intval = atoi(arg_list);
+	if(auto_intval_last == cur_intval)
+	{	
+		atel_dbg_print("[rejected]new interval same with old one");
+		return FALSE;
+	}
+		
+	/* clear auto report intval info */
+	memset(&auto_intval_fix, 0, sizeof(auto_intval_fix));
+
+	strncpy(auto_intval_fix.intval, arg_list, strlen(arg_list));
+	if (strncmp(auto_intval_fix.intval, arg_list, strlen(arg_list)))
+	{
+		atel_dbg_print("auto_intval set failed, cur intval:%s\n", arg_list);
+		return FALSE;
+	}
+
+	/* store last intval */
+	auto_intval_last = atoi(auto_intval_fix.intval);
+
+	return TRUE;
+	
+}
+
+bool interval_query(intval_info *cur_intval)
+{
+	intval_info * int_tmp = cur_intval;
+	char * intval_tmp = NULL;
+
+	intval_tmp = itoa(DFT_INTEVAL);
+
+	/* copy auto interval */
+	if(auto_intval_last == DFT_INTEVAL)
+	{
+		strncpy(int_tmp->intval, intval_tmp, strlen(intval_tmp));
+	}
+	else
+	{
+		strncpy(int_tmp->intval, auto_intval_fix.intval, strlen(auto_intval_fix.intval));
+	}
+	
 	return TRUE;
 }
 
 
 bool server_set(p_arg arg_each, uint8 arg_cnt)
 {
-
+	
 }
 
 bool server_query(SER_INFO *ser_data)
@@ -156,40 +211,46 @@ bool getadc(ADC_INFO* adc_data)
 CMD_PRO_ARCH_T cmd_pro_reg[TOTAL_CMD_NUM] = {
 
 	/* APN */
-	{.cmd_code = "APN", .cmd_rel_st = (void*)&apn_data, .ele_num = APN_ELE_NUM, .cmd_set_f = apn_set, .cmd_get_f = apn_query },
-	{.cmd_code = "SERVER", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "NOMOVE",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "INTERVAL", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "CONFIG",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "SPEEDALARM", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "PROTOCOL",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "VERSION", .cmd_set_f = NULL, .cmd_get_f = server_query},
-	{.cmd_code = "PASSWORD",.cmd_set_f = apn_set,.cmd_get_f = NULL },
-	{.cmd_code = "GPS", .cmd_set_f = server_set, .cmd_get_f = NULL},
-	{.cmd_code = "MILEAGE",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "RESENDINTERVAL", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "PDNTYPE",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "FACTORYRESET", .cmd_set_f = server_set, .cmd_get_f = NULL},
-	{.cmd_code = "OTASTART",.cmd_set_f = apn_set,.cmd_get_f = NULL },
-	{.cmd_code = "GETADC", .cmd_set_f = NULL, .cmd_get_f = getadc},
-	{.cmd_code = "REPORT",.cmd_set_f = NULL,.cmd_get_f = apn_query },
-	{.cmd_code = "HEARTBEAT", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "GEOFENCE",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "OUTPUT", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "HEADING",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "IDLINGALERT", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "HARSHBRAKING",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "HARSHACCEL", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "HARSHIMPACT",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "HARSHSWERVE", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "LOWINBATT",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "LOWEXBATT", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "VIRTUALIGNITION",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "CLEARBUFFER", .cmd_set_f = server_set, .cmd_get_f = NULL},
-	{.cmd_code = "THEFTMODE",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "TOWALARM", .cmd_set_f = server_set, .cmd_get_f = server_query},
-	{.cmd_code = "WATCHDOG",.cmd_set_f = apn_set,.cmd_get_f = apn_query },
-	{.cmd_code = "REBOOT", .cmd_set_f = server_set, .cmd_get_f = server_query},
+	{.cmd_code = "APN", 			.cmd_rel_st = (void*)&apn_tmp, 			.ele_num = APN_ELE_NUM, 	\
+	 .cmd_set_f = apn_set, 			.cmd_get_f = apn_query },
+	 
+	{.cmd_code = "SERVER", 																		.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+
+	{.cmd_code = "NOMOVE",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+
+	{.cmd_code = "INTERVAL", 		.cmd_rel_st = (void*)&auto_intval_tmp;	.ele_num = 	INTVAL_ELE_NUM,		\
+	 .cmd_set_f = interval_set, 	.cmd_get_f = interval_query},
+
+	{.cmd_code = "CONFIG",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "SPEEDALARM", 																	.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "PROTOCOL",																	.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "VERSION", 																	.cmd_set_f = NULL, 			.cmd_get_f = server_query},
+	{.cmd_code = "PASSWORD",																	.cmd_set_f = apn_set,		.cmd_get_f = NULL },
+	{.cmd_code = "GPS", 																		.cmd_set_f = server_set, 	.cmd_get_f = NULL},
+	{.cmd_code = "MILEAGE",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "RESENDINTERVAL", 																.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "PDNTYPE",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "FACTORYRESET", 																.cmd_set_f = server_set, 	.cmd_get_f = NULL},
+	{.cmd_code = "OTASTART",																	.cmd_set_f = apn_set,		.cmd_get_f = NULL },
+	{.cmd_code = "GETADC", 																		.cmd_set_f = NULL, 			.cmd_get_f = getadc},
+	{.cmd_code = "REPORT",																		.cmd_set_f = NULL,			.cmd_get_f = apn_query },
+	{.cmd_code = "HEARTBEAT", 																	.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "GEOFENCE",																	.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "OUTPUT", 																		.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "HEADING",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "IDLINGALERT", 																.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "HARSHBRAKING",																.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "HARSHACCEL", 																	.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "HARSHIMPACT",																	.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "HARSHSWERVE", 																.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "LOWINBATT",																	.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "LOWEXBATT", 																	.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "VIRTUALIGNITION",																.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "CLEARBUFFER", 																.cmd_set_f = server_set, 	.cmd_get_f = NULL},
+	{.cmd_code = "THEFTMODE",																	.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "TOWALARM", 																	.cmd_set_f = server_set, 	.cmd_get_f = server_query},
+	{.cmd_code = "WATCHDOG",																	.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
+	{.cmd_code = "REBOOT", 																		.cmd_set_f = server_set, 	.cmd_get_f = server_query},
 
 };
 
@@ -436,7 +497,6 @@ void build_ack(uint8 cmd_idx, bool cmd_type, bool status, void* cmd_rel_s)
 	p_dev_name = atel_get_dname();
 	p_real_time = atel_get_real_time();
 	
-	//sprintf_s(ack_buffer, sizeof(ack_buffer), "+ACK:%s,%s,%s,%s,%s%s", cmd_pro_reg[cmd_idx].cmd_code, p_imei, p_dev_name, "OK", p_real_time,"#");
 	sprintf(ack_buffer, "+ACK:%s,%s,%s,%s", cmd_pro_reg[cmd_idx].cmd_code, p_imei, p_dev_name, p_real_time);
 	use_len += strlen(ack_buffer);
 
@@ -470,11 +530,10 @@ void build_ack(uint8 cmd_idx, bool cmd_type, bool status, void* cmd_rel_s)
 	sprintf(ack_buffer + use_len, "%s", "#");
 	use_len += 1;
 
-
+#ifdef ATEL_DEBUG
 	atel_dbg_print("cnt of ack_buffer:%s\nthe use_len is:%d\n", ack_buffer, use_len);
+#endif
 
-	/* send ack to server through socket */
-	//send_packet(sfd, ack_buffer);
 }
 
 /* end */
@@ -542,7 +601,7 @@ int cmd_parse_entry(char* que_first)
 	}
 
 	/* apn info */
-	apn_info_show();
+	//apn_info_show();
 
 	/* build ack for server */
 	build_ack(index, cmd_type, status, cmd_pro_reg[index].cmd_rel_st);

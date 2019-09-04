@@ -53,7 +53,7 @@ typedef struct{
 #endif
 
 
-#define QT_Q_MAX_INFO_NUM		16
+#define QT_Q_MAX_INFO_NUM		40
 
 typedef struct TASK_COMM_S{
 	int msg_id;

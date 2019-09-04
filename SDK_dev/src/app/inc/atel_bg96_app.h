@@ -20,6 +20,7 @@
 #include "quectel_gpio.h"
 #include "qapi_fs.h"
 #include "qapi_socket.h"
+#include "events_if.h"
 
 #include <locale.h>
 
@@ -97,6 +98,15 @@ typedef enum {
 /* end */
 
 
+#define QUEUE_NODE_MAX		40
+
+typedef struct event_indicate_s{
+	int prio;
+	int tmp_data_addr;
+}event_msg;
+
+
+
 void loc_info_transform(qapi_Location_t location, char* trans_buf);
 int ota_service_start(void);
 
@@ -107,6 +117,10 @@ extern  int atel_mdm_ble_entry(void);
 extern  int atel_led_on(MODULE_PIN_ENUM m_pin);
 extern  int atel_led_off(MODULE_PIN_ENUM m_pin);
 extern  int mm16_lan_power_on(MODULE_PIN_ENUM m_pin);
+
+/* from events if */
+extern void alarm_event_process(void);
+
 
 
 #endif /*__ATEL_BG96_APP__*/

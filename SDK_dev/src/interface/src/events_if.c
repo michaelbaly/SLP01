@@ -204,7 +204,6 @@ void add_node_tail(que_table* q, node** last, node** cur, int key, int prio)
 {
 	
 	ULONG node_event;
-	int sig_mask = NODE_SIG_EVT_GET_E | NODE_SIG_EVT_PUT_E;
 	
 	/* lock the area */
 	tx_mutex_get(&q->lock, TX_NO_WAIT);
@@ -244,7 +243,7 @@ void add_node_tail(que_table* q, node** last, node** cur, int key, int prio)
 	q->is_avail = true;
 
 	/* send signal and release lock */
-	tx_event_flags_set(&q->cv, NODE_SIG_EVT_PUT_E|NODE_SIG_EVT_GET_E, TX_OR);
+	tx_event_flags_set(&q->cv, NODE_SIG_EVT_GET_E, TX_OR);
 	tx_mutex_put(&q->lock);
 
 }
@@ -266,7 +265,6 @@ void get_node(que_table* q, int* key, int* prio)
 
 	node* tmp = NULL;
 	int index = 0xff;
-	int sig_mask = NODE_SIG_EVT_GET_E | NODE_SIG_EVT_PUT_E;
 	ULONG node_event;
 
 	/* get the mutex */
@@ -277,7 +275,7 @@ wait_node:
 	while(false == q->is_avail)
 	{
 		atel_dbg_print("[get_node]queue is empty, waiting...");
-		tx_event_flags_get(&q->cv, sig_mask, TX_OR, &node_event, TX_WAIT_FOREVER);
+		tx_event_flags_get(&q->cv, NODE_SIG_EVT_GET_E, TX_OR, &node_event, TX_WAIT_FOREVER);
 		if(node_event&NODE_SIG_EVT_GET_E)
 		{
 		
@@ -304,7 +302,7 @@ wait_node:
 			put_buf(q, tmp);
 
 			/* send event and release the mutex */
-			tx_event_flags_set(&q->cv, NODE_SIG_EVT_PUT_E|NODE_SIG_EVT_GET_E, TX_OR);
+			tx_event_flags_set(&q->cv, NODE_SIG_EVT_PUT_E, TX_OR);
 			tx_mutex_put(&q->lock);
 			/* return once got the highest prio node */
 			return;
@@ -328,6 +326,9 @@ void release_buff(que_table *q)
     free(temp);
   }
   free(q);
+  temp = NULL;
+
+  return;
 }
 
 
@@ -347,11 +348,11 @@ void gen_process(void)
 	while(1) {
 
 		/* exit after put 16 nodes */
-		if (i == 16) break;
+		if (i++ == 16) break;
 		
 		atel_dbg_print("Calling put_node %d", i);
 
-		put_node(table, i++, (i % 3));
+		put_node(table, i, (i % 3));
 	}
 }
 
@@ -410,26 +411,11 @@ void alarms_report(EVENTS_T type, int report_flag)
 
 void alarm_event_process(void)
 {
-	/* check alarm first */
-
-    /* check event */
-
-	return;
-}
-
-
-/*
-@func
-  cmd_parse
-@brief
-  receive cmd from tcp/udp server
-*/
-void cmd_parse(char *cmd_str)
-{
-	/* extract each para from cmd_str */
 	
+
 	return;
 }
+
 
 
 void gen_exit(TX_THREAD* gen, UINT status)
@@ -451,7 +437,17 @@ void rep_exit(TX_THREAD* gen, UINT status)
 	return ;
 }
 
+bool ig_off_int()
+{
+	/* get ignition status from ble */
 
+	/* call ig status api */
+}
+
+
+
+
+#if 0
 int prioque_task_entry(void)
 {
 	int ret = -1;
@@ -561,6 +557,8 @@ int prioque_task_entry(void)
 		//tx_thread_entry_exit_notify(qt_sub2_thread_handle, rep_exit);
 	}
 }
+#endif
+
 
 
 

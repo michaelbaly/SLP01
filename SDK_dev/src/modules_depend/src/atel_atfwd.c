@@ -35,10 +35,6 @@
 *								  GLOBAL
 ***************************************************************************/
 
-/* begin: queue for communicate */
-static TX_QUEUE tx_queue_handle;
-static TASK_MSG task_comm[QT_Q_MAX_INFO_NUM];
-/* end */
 
 TX_BYTE_POOL *byte_pool_uart;
 TX_BYTE_POOL *byte_pool_at;
@@ -213,16 +209,6 @@ static void uart_rx_cb_at(uint32_t num_bytes, void *cb_data)
 	
 	uart_recv(uart_conf);
 	
-	/* uart2_conf->rx_buff store the tx data from BLE */
-	memcpy(&at_cmd_rsp[strlen(at_cmd_rsp)],uart_conf->rx_buff,num_bytes);
-	
-	atel_dbg_print("[get respond from BLE tx] uart_conf->rx_buff %d@len,%s@string",uart_conf->rx_len,uart_conf->rx_buff);
-
-	status = tx_queue_send(&tx_queue_handle, &rxcb,TX_WAIT_FOREVER );
-	if (TX_SUCCESS != status)
-	{
-		//qt_uart_dbg(uart1_conf.hdlr, "[task_create 1 ] tx_queue_send failed with status %d", status);
-	}
 }
 
 
