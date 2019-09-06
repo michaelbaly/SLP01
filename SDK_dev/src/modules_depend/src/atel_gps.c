@@ -38,7 +38,10 @@ static uint32 gps_tracking_id;
 #define LOCATION_TRACKING_FIXED_BIT (0x1 << 0)
 #define LOCATION_TRACKING_RSP_OK_BIT (0x1 << 1)
 #define LOCATION_TRACKING_RSP_FAIL_BIT (0x1 << 2)
+/* gps daily report source */
 qapi_Location_t location;
+
+#define MAX_BIT_MASK		8
 
 #define GPS_USER_BUFFER_SIZE 4096
 static uint8_t GPSuserBuffer[GPS_USER_BUFFER_SIZE];
@@ -73,10 +76,96 @@ static void location_collective_response_cb(size_t count, qapi_Location_Error_t*
     
 }
 
+/* begin: transform location info */
+/*
+@func
+  loc_info_transform
+@brief
+  Show location info.
+*/
+void loc_info_transform(qapi_Location_t location, char* trans_buf)
+{
+    char shift_count = 0;
+	unsigned char loc_bit;
+	int write_len = 0;
+	int total_len = 0;
+	
+	while(shift_count < MAX_BIT_MASK)
+	{
+		loc_bit = 1 << shift_count;
+		if(location.flags & loc_bit) 
+		{   
+			switch(loc_bit)
+			{
+				case QAPI_LOCATION_HAS_LAT_LONG_BIT:
+					write_len = sprintf(trans_buf, "LATITUDE: %d.%d\r\n",
+						(int)location.latitude, (abs((int)(location.latitude * 100000))) % 100000);
+					total_len += write_len; 
+					write_len = sprintf(trans_buf + total_len, "LONGITUDE: %d.%d\r\n",
+						(int)location.longitude, (abs((int)(location.longitude * 100000))) % 100000);
+					total_len += write_len; 
+					break;
+
+				case QAPI_LOCATION_HAS_ALTITUDE_BIT:
+					write_len = sprintf(trans_buf + total_len, "ALTITUDE: %d.%d\r\n",
+						(int)location.altitude, (abs((int)(location.altitude * 100))) % 100);
+					
+					total_len += write_len; 
+					break;
+
+				case QAPI_LOCATION_HAS_SPEED_BIT:
+					write_len = sprintf(trans_buf + total_len, "SPEED: %d.%d\r\n",
+						(int)location.speed, (abs((int)(location.speed * 100))) % 100);
+					
+					total_len += write_len; 
+					break;
+
+				case QAPI_LOCATION_HAS_BEARING_BIT:
+					write_len = sprintf(trans_buf + total_len, "BEARING: %d.%d\r\n",
+						(int)location.bearing, (abs((int)(location.bearing * 100))) % 100);
+					total_len += write_len; 
+					break;
+					
+				case QAPI_LOCATION_HAS_ACCURACY_BIT:
+					write_len = sprintf(trans_buf + total_len, "ACCURACY: %d.%d\r\n",
+						(int)location.accuracy, (abs((int)(location.accuracy * 100))) % 100);
+					total_len += write_len; 
+					break;
+					
+				case QAPI_LOCATION_HAS_VERTICAL_ACCURACY_BIT:
+					write_len = sprintf(trans_buf + total_len, "VERTICAL ACCURACY: %d.%d\r\n",
+						(int)location.verticalAccuracy, (abs((int)(location.verticalAccuracy * 100))) % 100);
+					total_len += write_len; 
+					break;
+
+				case QAPI_LOCATION_HAS_SPEED_ACCURACY_BIT:
+					write_len = sprintf(trans_buf + total_len, "SPEED ACCURACY: %d.%d\r\n",
+						(int)location.speedAccuracy, (abs((int)(location.speedAccuracy * 100))) % 100);
+					total_len += write_len; 
+					break;
+
+				case QAPI_LOCATION_HAS_BEARING_ACCURACY_BIT:
+					write_len = sprintf(trans_buf + total_len, "BEARING ACCURACY: %d.%d\r\n",
+						(int)location.bearingAccuracy, (abs((int)(location.bearingAccuracy * 100))) % 100);
+					total_len += write_len; 
+					break;
+					
+			}
+				
+		}
+		shift_count++;
+	}
+}
+
+
+/* end */
+
+/* triggered per second generally */
 static void location_tracking_callback(qapi_Location_t loc)
 {
     if(loc.flags & QAPI_LOCATION_HAS_LAT_LONG_BIT) 
     {
+    	/* copy to loc to report buff */
         memcpy(&location,&loc,sizeof(qapi_Location_t));
         tx_event_flags_set(gps_signal_handle, LOCATION_TRACKING_FIXED_BIT, TX_OR);
     }    

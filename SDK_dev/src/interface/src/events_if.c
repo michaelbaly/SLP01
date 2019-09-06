@@ -444,6 +444,49 @@ bool ig_off_int()
 	/* call ig status api */
 }
 
+char* atel_itoa(int n, char* chBuffer)
+{
+	int i = 1;
+	char* pch = chBuffer;
+	if (!pch) return 0;
+	while (n / i) i *= 10;
+
+	if (n < 0)
+	{
+		n = -n;
+		*pch++ = '-';
+	}
+	if (0 == n) i = 10;
+
+	while (i /= 10)
+	{
+		*pch++ = n / i + '0';
+		n %= i;
+	}
+	*pch = '\0';
+	return chBuffer;
+}
+
+
+char * get_event_type(MSG_TYPE_REL_E evt_bit)
+{
+	char evt_tmp[5] = {0};
+	switch(evt_bit)
+	{
+		case AUTO_REPORT_EVT:
+			return atel_itoa(AUTO_REPORT_E, evt_tmp);
+		case IG_ON_EVT:
+			return atel_itoa(IG_ON_E, evt_tmp);
+		case IG_OFF_EVT:
+			return atel_itoa(IG_OFF_E, evt_tmp);
+
+		default:
+		    atel_dbg_print("under development");
+			break;
+	}
+
+	return NULL;
+}
 
 
 

@@ -40,6 +40,8 @@
 #define QL_DEF_APN	        "CMNET"
 #define DSS_ADDR_INFO_SIZE	5
 #define DSS_ADDR_SIZE       16
+#define AUTO_REPORT_DEBUG
+
 
 #define GET_ADDR_INFO_MIN(a, b) ((a) > (b) ? (b) : (a))
 
@@ -58,6 +60,7 @@
 extern char* g_que_first;
 extern char ack_buffer[ACK_SET_LEN_MAX];
 extern r_queue_s rq;
+extern int auto_rep_fd;
 
 qapi_TIMER_handle_t que_timer_handle;
 qapi_TIMER_define_attr_t que_timer_def_attr;
@@ -672,6 +675,8 @@ static int start_udp_session(void)
     fd_set  fset;
 	
 	struct sockaddr_in to;
+	
+	struct sockaddr_in client_addr;
 	int32 tolen = sizeof(struct sockaddr_in);
 
 	
@@ -708,39 +713,48 @@ static int start_udp_session(void)
 			break;
 		}
 		
-		atel_dbg_print("<-- Create socket[%d] success -->\n", sock_fd);
+		/* socket for msg auto report */
+#ifdef AUTO_REPORT_DEBUG
+		auto_rep_fd = qapi_socket(AF_INET, DEF_SRC_TYPE, 0);
+		if (auto_rep_fd < 0)
+		{
+			atel_dbg_print("auto report socket create failed!");			
+			break;
+		}
+#endif
+		atel_dbg_print("<-- Create socket[%d] success -->", auto_rep_fd);
 		memset(send_buff, 0, sizeof(send_buff));
 		memset(&to, 0, sizeof(to));
 		to.sin_family = AF_INET;
 		to.sin_port = _htons(DEF_SRV_PORT);
 		to.sin_addr.s_addr = inet_addr(DEF_SRV_ADDR);
-
-		#if 0
-		/* Connect to UDP server */
-		if (-1 == qapi_connect(sock_fd, (struct sockaddr *)&to, tolen))
-		{
-			atel_dbg_print("Connect to servert error\n");
-			break;
-		}
-		#endif
-
 		
-		atel_dbg_print("<-- Connect to server[%s][%d] success -->\n", DEF_SRV_ADDR, DEF_SRV_PORT);
+		atel_dbg_print("<-- Connect to server[%s][%d] success -->", DEF_SRV_ADDR, DEF_SRV_PORT);
 
-		strcpy(send_buff, "Hello server, This is an UDP client!");
+		strcpy(send_buff, "Hello server, This is an udp client!");
 		
 		/* Start sending data to server after connecting server success */
 		sent_len = qapi_sendto(sock_fd, send_buff, strlen(send_buff), 0, (struct sockaddr *)&to, tolen);
 		if (sent_len > 0)
 		{
-			atel_dbg_print("Client send data success, len: %d, data: %s\n", sent_len, send_buff);
+			atel_dbg_print("Client send data success, len: %d, data: %s", sent_len, send_buff);
+		}
+
+		
+		memset(send_buff, 0, sizeof(send_buff));
+		strcpy(send_buff, "this is auto report socket!");
+		sent_len = qapi_sendto(auto_rep_fd, send_buff, strlen(send_buff), 0, (struct sockaddr *)&to, tolen);
+		if (sent_len > 0)
+		{
+			atel_dbg_print("Client send data success, len: %d, data: %s", sent_len, send_buff);
 		}
 
 
 		/* I/O multiplexing */
 		while (1)
 		{
-			atel_dbg_print("---receive data process entry---");
+			atel_dbg_print("<---wait data from udp server--->");
+			#if 1
 			qapi_fd_zero(&fset);
 			qapi_fd_set(sock_fd, &fset);
 			ret = qapi_select(&fset, NULL, NULL, SELECT_TIMEOUT);
@@ -821,7 +835,7 @@ static int start_udp_session(void)
 			{
 				atel_dbg_print("---opps, select timeout, [hb_cnt]%d---", hb_cnt);
 				
-				/* send heart beat every 2 min */
+				/* send heart beat every 20 seconds */
 				if(hb_cnt++ == 2)
 				{
 					atel_dbg_print("---send heartbeat---");
@@ -830,6 +844,14 @@ static int start_udp_session(void)
 					if (sent_len > 0)
 					{
 						atel_dbg_print("Client send heartbeat, len: %d, data: %s\n", sent_len, "heartbeat");
+					}
+
+					/* heart beat for auto report */
+					sent_len = qapi_sendto(auto_rep_fd, "heartbeat for auto report", strlen("heartbeat for auto report"), 0, (struct sockaddr *)&to, tolen);
+					
+					if (sent_len > 0)
+					{
+						atel_dbg_print("Client send heartbeat, len: %d, data: %s\n", sent_len, "heartbeat for auto report");
 					}
 				
 					hb_cnt = 0;
@@ -888,8 +910,9 @@ static int start_udp_session(void)
 			}
 			#endif
 			#endif
+			#endif
 
-			//qapi_Timer_Sleep(1000, QAPI_TIMER_UNIT_MSEC, true);
+			qapi_Timer_Sleep(1000, QAPI_TIMER_UNIT_MSEC, true);
 		}
 	} while (0);
 

@@ -20,6 +20,7 @@
 /*===========================================================================
                            Global variable
 ===========================================================================*/
+#define DFT_INTEVAL 20000 //auto report interval(seconds) after system up
 
 /* begin: rq for cmd from server */
 r_queue_s rq;
@@ -39,6 +40,8 @@ ADC_INFO adc_info = { {0} };
 /* get first ele of the cmd queue */
 char *g_que_first = NULL;
 char ack_buffer[ACK_SET_LEN_MAX] = {0};
+
+extern g_daily_timer_restart;
 
 
 /*===========================================================================
@@ -113,7 +116,7 @@ bool apn_query(APN_INFO *apn_data)
 	return TRUE;
 }
 
-bool interval_set(p_arg arg_each, uint8 arg_cnt)
+bool auto_interval_set(p_arg arg_each, uint8 arg_cnt)
 {
 	/* interval param offset */
 	p_arg arg_list = arg_each + ACTUAL_ARG_OFFSET;
@@ -140,21 +143,25 @@ bool interval_set(p_arg arg_each, uint8 arg_cnt)
 	/* store last intval */
 	auto_intval_last = atoi(auto_intval_fix.intval);
 
+	/* set auto report timer re-activate flag */
+	g_daily_timer_restart = TRUE;
+
 	return TRUE;
 	
 }
 
-bool interval_query(intval_info *cur_intval)
+bool auto_interval_query(intval_info *cur_intval)
 {
 	intval_info * int_tmp = cur_intval;
 	char * intval_tmp = NULL;
+	char intval_buf[5] = {0};
 
-	intval_tmp = itoa(DFT_INTEVAL);
+	atel_itoa(DFT_INTEVAL, intval_buf);
 
 	/* copy auto interval */
 	if(auto_intval_last == DFT_INTEVAL)
 	{
-		strncpy(int_tmp->intval, intval_tmp, strlen(intval_tmp));
+		strncpy(int_tmp->intval, intval_buf, strlen(intval_buf));
 	}
 	else
 	{
@@ -218,8 +225,8 @@ CMD_PRO_ARCH_T cmd_pro_reg[TOTAL_CMD_NUM] = {
 
 	{.cmd_code = "NOMOVE",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
 
-	{.cmd_code = "INTERVAL", 		.cmd_rel_st = (void*)&auto_intval_tmp;	.ele_num = 	INTVAL_ELE_NUM,		\
-	 .cmd_set_f = interval_set, 	.cmd_get_f = interval_query},
+	{.cmd_code = "INTERVAL", 		.cmd_rel_st = (void*)&auto_intval_tmp,	.ele_num = 	INTVAL_ELE_NUM,		\
+	 .cmd_set_f = auto_interval_set, 	.cmd_get_f = auto_interval_query},
 
 	{.cmd_code = "CONFIG",																		.cmd_set_f = apn_set,		.cmd_get_f = apn_query },
 	{.cmd_code = "SPEEDALARM", 																	.cmd_set_f = server_set, 	.cmd_get_f = server_query},
@@ -349,9 +356,9 @@ void show_queue_cont()
 void apn_info_show()
 {
 	atel_dbg_print("the apn info:\n");
-	atel_dbg_print("apn:%s\n", apn_info.apn);
-	atel_dbg_print("apn_usrname:%s\n", apn_info.apn_usrname);
-	atel_dbg_print("apn_passwd:%s\n", apn_info.apn_passwd);
+	atel_dbg_print("apn:%s\n", apn_fix.apn);
+	atel_dbg_print("apn_usrname:%s\n", apn_fix.apn_usrname);
+	atel_dbg_print("apn_passwd:%s\n", apn_fix.apn_passwd);
 
 	return;
 }

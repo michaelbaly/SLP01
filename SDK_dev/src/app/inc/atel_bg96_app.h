@@ -29,6 +29,9 @@
 #define TRUE  1
 #define FALSE 0
 
+#define EVENTS_SIG_ALL 	0x3ffffffff /* |bit31|bit30|bit29|...|bit0| 
+										0	  0     1    ...  1 */
+
 /* begin: for subtask of tcp client */
 #define ATEL_TCPCLIENT_THREAD_PRIORITY   	180
 #define ATEL_TCPCLIENT_THREAD_STACK_SIZE 	(1024 * 32)

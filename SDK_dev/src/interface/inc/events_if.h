@@ -53,7 +53,7 @@ typedef struct bitsmap_alarm_event_s {
 	/* common */
 	unsigned int battery_low:1; /* bit0 battery low alarm */
 	unsigned int geo_break:1; /* bit1 geofence break alarm */
-	unsigned int daily_hb:1; /* bit2 daily heartbeat event */
+	unsigned int daily_rep:1; /* bit2 daily auto report event */
 	
 	/* for ig on situation */
 	unsigned int ig_on_e:1; /* bit3 ignition on event */
@@ -207,23 +207,23 @@ typedef enum {
 }MSG_TYPE_E;
 
 typedef enum {
-	AUTO_REPORT_EVT = 			SHIFT_L(0),
+	AUTO_REPORT_EVT = 			SHIFT_L(0),	/* daily auto report event bit */
 	POWER_CUT_EVT = 			SHIFT_L(1),
-	IG_ON_EVT = 				SHIFT_L(2),
-	IG_OFF_EVT = 				SHIFT_L(3),
-	HEART_BEAT_EVT = 			SHIFT_L(4),
-	INTER_BATT_LOW_EVT = 		SHIFT_L(5),
+	IG_ON_EVT = 				SHIFT_L(2), /* ignition on event bit */
+	IG_OFF_EVT = 				SHIFT_L(3),	/* ignition off event bit */
+	HEART_BEAT_EVT = 			SHIFT_L(4), /* heart beat event bit */
+	INTER_BATT_LOW_EVT = 		SHIFT_L(5), /* inter battary low event bit */
 	G_SENSOR_ALIG_EVT = 		SHIFT_L(6),
 	ROLL_OVER_EVT = 			SHIFT_L(7),
 	HARSH_BRAKE_EVT = 			SHIFT_L(8),
 	HARSH_ACC_EVT = 			SHIFT_L(9),
 	IMPACT_EVT = 				SHIFT_L(10),
 	HARSH_SWERVE_EVT = 			SHIFT_L(11),
-	OVER_SPEED_EVT = 			SHIFT_L(12),
+	OVER_SPEED_EVT = 			SHIFT_L(12), /* over speed event bit */
 	TOW_EVT = 					SHIFT_L(13),
 	HEADING_CHG_REP_EVT = 		SHIFT_L(14),
-	IDLING_REP_EVT = 			SHIFT_L(15),
-	POWER_RECOVER_EVT = 		SHIFT_L(16),
+	IDLING_REP_EVT = 			SHIFT_L(15), /* idling report event bit */
+	POWER_RECOVER_EVT = 		SHIFT_L(16), /* power recovery event bit */
 	
 	FIR_CIR_GEO_IN_EVT = 		SHIFT_L(17),
 	FIR_CIR_GEO_OUT_EVT = 		SHIFT_L(18),
@@ -237,10 +237,11 @@ typedef enum {
 	SEC_POLY_GEO_IN_EVT = 		SHIFT_L(25),
 	SEC_POLY_GEO_OUT_EVT = 		SHIFT_L(26),
 	
-	EXT_BATT_LOW_EVT = 			SHIFT_L(27),
+	EXT_BATT_LOW_EVT = 			SHIFT_L(27), /* external battary low event bit */
 	VIR_IG_ON_EVT = 			SHIFT_L(28),
 	VIR_IG_OFF_EVT = 			SHIFT_L(29),
 }MSG_TYPE_REL_E;
+
 
 #define BITS_PER_BYTE		8
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
@@ -263,7 +264,7 @@ typedef struct rep_gps_S {
 	char ext_adc[4];
 	char seq_num[3];
 	
-}REP_GPS_T;
+}rep_gps_t;
 
 /* separator: '-' */
 typedef struct gsm_cel_data {
@@ -280,7 +281,7 @@ typedef struct gsm_cel_data {
 	char ext_adc[4];
 	char seq_num[3];
 	
-}GSM_CEL_T;
+}gsm_cel_t;
 
 
 /* separator: '-' */
@@ -299,7 +300,13 @@ typedef struct lte_cel_data {
 	char ext_adc[4];
 	char seq_num[3];
 	
-}LTE_CEL_T;
+}lte_cel_t;
+
+typedef union msg_report{
+	rep_gps_t *gps_data;
+	gsm_cel_t *gsm_data;
+	lte_cel_t *lte_data;
+}msg_rep_u;
 
 typedef enum {
 	SEPARATOR_COMMA_E,	/* ',' */
