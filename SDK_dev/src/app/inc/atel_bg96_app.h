@@ -53,9 +53,18 @@ static unsigned char atel_udpclient_thread_stack[ATEL_UDPCLIENT_THREAD_STACK_SIZ
 #define ATEL_GPS_THREAD_PRIORITY   	180
 #define ATEL_GPS_THREAD_STACK_SIZE 	(1024 * 32)
 
-static TX_THREAD* atel_gps_thread_handle;
+//static TX_THREAD* atel_gps_thread_handle;
 static unsigned char atel_gps_thread_stack[ATEL_GPS_THREAD_STACK_SIZE];
 /* end */
+
+/* begin: for subtask of event report service */
+#define ATEL_EVENT_REP_THREAD_PRIORITY   	180
+#define ATEL_EVENT_REP_THREAD_STACK_SIZE 	(1024 * 32)
+
+//static TX_THREAD* atel_event_rep_thread_handle;
+static unsigned char atel_event_rep_thread_stack[ATEL_EVENT_REP_THREAD_STACK_SIZE];
+/* end */
+
 
 /* begin: for subtask of mdm communicate with ble through at framework */
 #define ATEL_AT_FRAME_THREAD_PRIORITY   	180

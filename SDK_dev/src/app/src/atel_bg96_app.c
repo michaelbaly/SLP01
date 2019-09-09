@@ -45,6 +45,13 @@ qapi_TIMER_handle_t timer_handle;
 qapi_TIMER_define_attr_t timer_def_attr;
 qapi_TIMER_set_attr_t timer_set_attr;
 
+#if 0
+qapi_TIMER_handle_t evt_timer_handle;
+qapi_TIMER_define_attr_t evt_timer_def_attr;
+qapi_TIMER_set_attr_t evt_timer_set_attr;
+qbool_t obs_timer_state = false;
+#endif
+
 #define ATEL_IG_ON_RUNNING_MODE_CFG_FILE		"/datatx/ig_mode_cfg"
 /**************************************************************************
 *                                 GLOBAL
@@ -138,6 +145,20 @@ subtask_config_t gps_task_config ={
 	atel_gps_thread_stack, ATEL_GPS_THREAD_STACK_SIZE, ATEL_GPS_THREAD_PRIORITY
 	
 };
+
+void report_entry(void)
+{
+	return;
+}
+
+
+subtask_config_t evt_rep_config ={
+	
+	NULL, "Atel event report thread", report_entry, \
+	atel_event_rep_thread_stack, ATEL_EVENT_REP_THREAD_STACK_SIZE, ATEL_EVENT_REP_THREAD_PRIORITY
+	
+};
+
 
 subtask_config_t mdm_ble_at_config ={
 	
@@ -351,6 +372,39 @@ char gps_service_start(void)
 	return 0;
 }
 
+char event_report_sevice_start(void)
+{
+	int32 status = -1;
+	
+	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&evt_rep_config.module_thread_handle, sizeof(TX_THREAD))) 
+	{
+		atel_dbg_print("[task_create] txm_module_object_allocate failed ~");
+		return -1;
+	}
+
+	/* create the subtask step by step */
+	status = tx_thread_create(evt_rep_config.module_thread_handle,
+					   evt_rep_config.module_task_name,
+					   evt_rep_config.module_task_entry,
+					   NULL,
+					   evt_rep_config.module_thread_stack,
+					   evt_rep_config.stack_size,
+					   evt_rep_config.stack_prior,
+					   evt_rep_config.stack_prior,
+					   TX_NO_TIME_SLICE,
+					   TX_AUTO_START
+					   );
+	  
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[task_create] : Thread creation failed");
+		return -1;
+	}
+
+	return 0;
+}
+
+
 int bg96_com_ble_task(void)
 {
 	
@@ -387,6 +441,7 @@ int bg96_com_ble_task(void)
 
 void cb_timer(ULONG gpio_phy)
 {   
+#if 0
 	g_sim_counter++;
 	atel_dbg_print("[cb_timer]g_sim_counter is: %d", g_sim_counter);
 	if(g_sim_counter % 2)
@@ -409,8 +464,9 @@ void cb_timer(ULONG gpio_phy)
 		g_sim_relay_ble = LOW;
 	}
 #endif
+#endif
 
-
+#if 0
 #ifdef ATEL_DEBUG
 	static ULONG tri_cnt = 0;
 	int sent_len = -1;
@@ -423,7 +479,7 @@ void cb_timer(ULONG gpio_phy)
 	//memset(send_buff, 0, sizeof(send_buff));
 	memset(&to, 0, sizeof(to));
 	to.sin_family = AF_INET;
-	to.sin_port = _htons(7500);
+	to.sin_port = _htons(DEF_SRV_PORT);
 	to.sin_addr.s_addr = inet_addr(DEF_SRV_ADDR);
 
 #endif
@@ -435,8 +491,8 @@ void cb_timer(ULONG gpio_phy)
 	/* send daily report to udp server with fixed interval */
 	memset(sent_buf, 0, sizeof(sent_buf));
 	strcpy(sent_buf, "hello server, this is gps data!");
-	//sent_len = qapi_send(auto_rep_fd, sent_buf, strlen(sent_buf), 0, (struct sockaddr *)&to, tolen);
-	sent_len = qapi_send(auto_rep_fd, sent_buf, strlen(sent_buf), 0);
+	sent_len = qapi_sendto(auto_rep_fd, sent_buf, strlen(sent_buf), 0, (struct sockaddr *)&to, tolen);
+	//sent_len = qapi_send(auto_rep_fd, sent_buf, strlen(sent_buf), 0);
 	if (sent_len > 0)
 	{
 		atel_dbg_print("daily report timer send data success, len: %d, data: %s\n", sent_len, sent_buf);
@@ -444,6 +500,8 @@ void cb_timer(ULONG gpio_phy)
 #endif
 
 #endif
+#endif
+
 	
 	return;
 }
@@ -470,6 +528,78 @@ void ig_timer_init(void)
 
 }
 
+#if 0
+/* data notification callback */
+void udp_data_notify_signal_callback(uint32 userData)
+{
+	int sent_len = 0;
+	int sock_fd = -1;
+	static uint32 cnt = 0;
+	char sent_buff[SENT_BUF_SIZE];
+	struct sockaddr_in server_addr;
+
+	sock_fd = auto_rep_fd;
+	memset(sent_buff, 0, sizeof(sent_buff));
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = _htons(DEF_SRV_PORT);
+	server_addr.sin_addr.s_addr = inet_addr(DEF_SRV_ADDR);
+
+	strcpy(sent_buff, "this msg came from data transmit timer");
+
+	/* Start sending data to server after connecting server success */
+	sent_len = qapi_sendto(sock_fd, sent_buff, strlen(sent_buff), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+
+	if (sent_len > 0)
+	{
+		cnt++;
+		atel_dbg_print("Client send data success, len: %d, cnt: %d\n", sent_len, cnt);
+	}
+	else
+	{
+		atel_dbg_print("Send data failed: %d\n", sent_len);
+	}
+
+  	return;
+}
+
+
+void udp_data_transfer_timer_def(void)
+{
+	//if (!obs_timer_state)
+	{
+		
+	    evt_timer_def_attr.deferrable = false;
+	    evt_timer_def_attr.cb_type = QAPI_TIMER_FUNC1_CB_TYPE;
+	    evt_timer_def_attr.sigs_func_ptr = udp_data_notify_signal_callback;
+	    evt_timer_def_attr.sigs_mask_data = 0;
+
+		qapi_Timer_Def(&evt_timer_handle, &evt_timer_def_attr);
+	}
+}
+
+void udp_data_transfer_timer_start()
+{
+	//qapi_TIMER_set_attr_t time_attr;
+	evt_timer_set_attr.unit = QAPI_TIMER_UNIT_SEC;
+	evt_timer_set_attr.reload = 5;
+	evt_timer_set_attr.time = 5; /* 5 sec */
+	
+	qapi_Timer_Set(evt_timer_handle, &evt_timer_set_attr);
+	obs_timer_state = true;
+}
+
+static void udp_data_transfer_timer_stop(void)
+{
+	if (obs_timer_state)
+	{
+		obs_timer_state = false;
+		qapi_Timer_Stop(evt_timer_handle);
+		qapi_Timer_Undef(evt_timer_handle);
+	}
+}
+#endif
+
 /*
 @func
   relay_from_ble
@@ -492,7 +622,7 @@ void report_func(ULONG timer_input)
 	/* use udp socket to report msg */
 
 	
-	atel_dbg_print("<-- socket:%d, send msg to udp server, the %d time-->\n", auto_rep_fd, tri_cnt++);
+	atel_dbg_print("<-- socket:%d, send msg to udp server, the %d time-->\n", auto_rep_fd, ++tri_cnt);
 	#if 1
 	//memset(send_buff, 0, sizeof(send_buff));
 	memset(&to, 0, sizeof(to));
@@ -527,6 +657,7 @@ void report_func(ULONG timer_input)
 		g_daily_timer_restart = FALSE;
 	}
 }
+
 /* func: daily heart beat report 
 */
 char daily_report_start(void)
@@ -565,24 +696,35 @@ void event_related_timer_init()
 	return;
 }
 
+
+
+
+
 boolean system_init(void)
 {
 	int status = 0xff;
 	/* tcp service bring up */
 	//tcp_service_start();
 
-	/* udp service bring up */
+	/* udp service start */
 	status = udp_service_start();
 	if(status != 0)
 	{
 		atel_dbg_print("udp service invalid!");
 	}
 	
-	/* gps service bring up */
+	/* gps service start */
     status = gps_service_start();
 	if(status != 0)
 	{
-		atel_dbg_print("udp service invalid!");
+		atel_dbg_print("gps service invalid!");
+	}
+
+	/* event report service start */
+    status = event_report_sevice_start();
+	if(status != 0)
+	{
+		atel_dbg_print("event_report_sevice_start service invalid!");
 	}
 	#if 0
 	/* daily heart beat report after system up */
@@ -879,7 +1021,7 @@ boolean system_timer_init(void)
   events process entry. 
 */
 
-void event_det(void)
+void event_detect(void)
 {
 	ULONG event_flag = 0;
 	char *event_type = NULL;
@@ -1022,7 +1164,7 @@ int quectel_task_entry(void)
 	tx_event_flags_create(ig_switch_signal_handle, "ignition status tracking");
 	tx_event_flags_set(ig_switch_signal_handle, 0x0, TX_AND);
 
-	#if 1
+	#if 0
 	/* enter ig off flow when system normal up */
 	if (normal_start)
 	{
@@ -1031,6 +1173,13 @@ int quectel_task_entry(void)
 	}
 	#endif
 
+#ifdef ATEL_DEBUG
+	//daily_report_start();
+	
+	/* Init timer for sending data every 5seconds */
+	udp_data_transfer_timer_def();
+	udp_data_transfer_timer_start();
+#endif
 	
 	atel_dbg_print("Entering mode switch flow");
 	
@@ -1038,7 +1187,7 @@ int quectel_task_entry(void)
 	{
 		atel_dbg_print("[quectel_task_entry]main task running %d times", main_task_run_cnt++);
 
-		#if 1
+		#if 0
 		/* get switch event */
 		tx_event_flags_get(ig_switch_signal_handle, sig_mask, TX_OR, &switch_event, TX_WAIT_FOREVER);
 		
