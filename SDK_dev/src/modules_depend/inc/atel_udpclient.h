@@ -36,7 +36,7 @@
 #define DEF_BACKLOG_NUM (5)
 
 #define RECV_BUF_SIZE   (128)
-#define SENT_BUF_SIZE   (128)
+#define SENT_BUF_SIZE   (1024)
 #define ACK_SET_LEN_MAX		256
 
 

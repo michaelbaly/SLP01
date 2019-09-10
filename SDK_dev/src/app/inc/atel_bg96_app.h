@@ -58,12 +58,21 @@ static unsigned char atel_gps_thread_stack[ATEL_GPS_THREAD_STACK_SIZE];
 /* end */
 
 /* begin: for subtask of event report service */
-#define ATEL_EVENT_REP_THREAD_PRIORITY   	180
+#define ATEL_EVENT_REP_THREAD_PRIORITY   	100 /* with higher prio compare to other thread */
 #define ATEL_EVENT_REP_THREAD_STACK_SIZE 	(1024 * 32)
 
 //static TX_THREAD* atel_event_rep_thread_handle;
 static unsigned char atel_event_rep_thread_stack[ATEL_EVENT_REP_THREAD_STACK_SIZE];
 /* end */
+
+/* begin: for subtask of event report service */
+#define ATEL_EVENT_CAP_THREAD_PRIORITY   	180
+#define ATEL_EVENT_CAP_THREAD_STACK_SIZE 	(1024 * 32)
+
+//static TX_THREAD* atel_event_rep_thread_handle;
+static unsigned char atel_event_cap_thread_stack[ATEL_EVENT_CAP_THREAD_STACK_SIZE];
+/* end */
+
 
 
 /* begin: for subtask of mdm communicate with ble through at framework */
@@ -121,6 +130,10 @@ typedef struct event_indicate_s{
 
 void loc_info_transform(qapi_Location_t location, char* trans_buf);
 int ota_service_start(void);
+int data_capture_process(void);
+int event_record(void);
+
+
 
 extern	int atel_tcpclient_entry(void);
 extern	int atel_udpclient_entry(void);

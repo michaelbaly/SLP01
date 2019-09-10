@@ -48,6 +48,12 @@ typedef enum {
 	
 }DRV_BEHAV_E;
 
+typedef enum {
+	CRITICAL_E = 1,
+	MIDDLE_E = 2,
+	NORMAL_E = 3,
+}prio_level_e;
+
 typedef struct bitsmap_alarm_event_s {
 	
 	/* common */
@@ -241,6 +247,8 @@ typedef enum {
 	VIR_IG_ON_EVT = 			SHIFT_L(28),
 	VIR_IG_OFF_EVT = 			SHIFT_L(29),
 }MSG_TYPE_REL_E;
+
+#define MAX_EVENTS	30 //specify the total events which can extented in further
 
 
 #define BITS_PER_BYTE		8

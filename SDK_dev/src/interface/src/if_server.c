@@ -22,9 +22,6 @@
 ===========================================================================*/
 #define DFT_INTEVAL 20000 //auto report interval(seconds) after system up
 
-/* begin: rq for cmd from server */
-r_queue_s rq;
-/* end */
 
 /* this contains apn/username/password */
 APN_INFO apn_fix = { {0} };
@@ -265,91 +262,6 @@ CMD_PRO_ARCH_T cmd_pro_reg[TOTAL_CMD_NUM] = {
 
 
 
-/* init the ring queue */
-void rq_init()
-{
-	char cnt = 0;
-	
-	rq.front = rq.rear = 0;
-	while(cnt < R_QUEUE_SIZE)
-		rq.p_ack[cnt++] = NULL;
-}
-
-/* judge empty */
-bool isempty(r_queue_s rq)
-{
-	if(rq.front == rq.rear)
-	{
-		return TRUE;
-	}
-	else
-	{
-		return FALSE;
-	}
-}
-
-/* judge full */
-bool isfull(r_queue_s rq)
-{
-	if ((rq.rear + 1) % R_QUEUE_SIZE == rq.front)
-	{
-		return TRUE;
-	}
-	else
-	{
-		return FALSE;
-	}
-}
-
-/* enqueue */
-void enqueue(char *cmd)
-{
-	if(isfull(rq))
-	{
-		atel_dbg_print("queue is full\n");
-		return;
-	}
-
-	rq.p_ack[rq.rear] = cmd;
-	rq.rear = (rq.rear + 1) % R_QUEUE_SIZE;
-
-}
-
-void dequeue()
-{
-	if (isempty(rq))
-	{
-		atel_dbg_print("queue is empty\n");
-		return;
-	}
-
-	atel_dbg_print("[dequeue]the release addr is %p\n", rq.p_ack[rq.front]);
-	/* release the allocated buff */
-	tx_byte_release(rq.p_ack[rq.front]);
-
-	/* move head pointer to next */
-	rq.front = (rq.front + 1) % R_QUEUE_SIZE;
-
-}
-
-char * get_first_ele()
-{
-	atel_dbg_print("[get_first_ele]the returned addr is %p\n", rq.p_ack[rq.front]);
-	return rq.p_ack[rq.front];
-}
-
-
-void show_queue_cont()
-{
-	char *tmp = rq.p_ack[rq.front];
-	
-	while(tmp)
-	{
-		atel_dbg_print("[cur_queue]%s", tmp);
-        rq.front++;
-		tmp = rq.p_ack[rq.front];
-	}
-}
 
 
 /* show apn info */

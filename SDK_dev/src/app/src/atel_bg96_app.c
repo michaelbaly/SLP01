@@ -34,12 +34,27 @@
 #define ATEL_DEBUG
 #define IF_SERVER_DEBUG
 #define AUTO_REPORT_DEBUG
+#define EVENTS_REPORT_DEBUG
 
 
 /* begin: queue for communicate */
-TX_QUEUE *evt_queue;
+TX_QUEUE *evt_notice;
+TX_MUTEX *rep_mem_mutex;
 
 /* end */
+
+
+TX_TIMER *warning_intr;
+TX_TIMER *warning_copy_scheduler;
+TX_TIMER *unsafe_intr;
+TX_TIMER *unsafe_copy_scheduler;
+
+TX_TIMER *stats_timer;
+
+/* var for statistic */
+ULONG num_unsafe = 0;
+ULONG num_warning = 0;
+
 
 qapi_TIMER_handle_t timer_handle;
 qapi_TIMER_define_attr_t timer_def_attr;
@@ -64,6 +79,12 @@ const char* p_msg_rep = "this is gps data";
 
 #define LOC_SAVE_OK		0
 #define LOC_SAVE_ERR	-1
+
+#define MAX_TMP_MEM 200
+
+ULONG frame_index = 0, event_count = 0, frame_data[2];
+ULONG tmp_mem[MAX_TMP_MEM][2];
+ULONG rep_buf[MAX_EVENTS][26];
 
 
 
@@ -106,12 +127,11 @@ TX_EVENT_FLAGS_GROUP *ig_switch_signal_handle;
 TX_EVENT_FLAGS_GROUP *events_signal_handle;
 TX_BYTE_POOL *byte_pool_event;
 #define EVENT_POOL_START 	(void*)0x500000
-#define FREE_MEM_SIZE		2048 //2M mem for msg process
+#define FREE_MEM_SIZE		8*32*1024 //2M mem for msg process
 //const void * event_pool_start = EVENT_POOL_START;
 char event_pool_start[FREE_MEM_SIZE];
 
 
-#define MAX_EVENTS	30 //specify the total events which can extented in further
 void* event_que_handle = NULL;
 /* end */
 
@@ -152,9 +172,17 @@ void report_entry(void)
 }
 
 
+subtask_config_t evt_cap_config ={
+	
+	NULL, "Atel data capture thread", data_capture_process, \
+	atel_event_cap_thread_stack, ATEL_EVENT_CAP_THREAD_STACK_SIZE, ATEL_EVENT_CAP_THREAD_PRIORITY
+	
+};
+
+
 subtask_config_t evt_rep_config ={
 	
-	NULL, "Atel event report thread", report_entry, \
+	NULL, "Atel event report thread", event_record, \
 	atel_event_rep_thread_stack, ATEL_EVENT_REP_THREAD_STACK_SIZE, ATEL_EVENT_REP_THREAD_PRIORITY
 	
 };
@@ -372,7 +400,40 @@ char gps_service_start(void)
 	return 0;
 }
 
-char event_report_sevice_start(void)
+char event_capture_service_start(void)
+{
+	int32 status = -1;
+	
+	if(TX_SUCCESS != txm_module_object_allocate((VOID *)&evt_cap_config.module_thread_handle, sizeof(TX_THREAD))) 
+	{
+		atel_dbg_print("[task_create] txm_module_object_allocate failed ~");
+		return -1;
+	}
+
+	/* create the subtask step by step */
+	status = tx_thread_create(evt_cap_config.module_thread_handle,
+					   evt_cap_config.module_task_name,
+					   evt_cap_config.module_task_entry,
+					   NULL,
+					   evt_cap_config.module_thread_stack,
+					   evt_cap_config.stack_size,
+					   evt_cap_config.stack_prior,
+					   evt_cap_config.stack_prior,
+					   TX_NO_TIME_SLICE,
+					   TX_AUTO_START
+					   );
+	  
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[task_create] : Thread creation failed");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+char event_report_service_start(void)
 {
 	int32 status = -1;
 	
@@ -392,7 +453,7 @@ char event_report_sevice_start(void)
 					   evt_rep_config.stack_prior,
 					   evt_rep_config.stack_prior,
 					   TX_NO_TIME_SLICE,
-					   TX_AUTO_START
+					   TX_DONT_START /* triggered by event detect timer */
 					   );
 	  
 	if(status != TX_SUCCESS)
@@ -720,12 +781,24 @@ boolean system_init(void)
 		atel_dbg_print("gps service invalid!");
 	}
 
+#ifndef EVENTS_REPORT_DEBUG
 	/* event report service start */
-    status = event_report_sevice_start();
+    status = event_capture_service_start();
+	if(status != 0)
+	{
+		atel_dbg_print("event_capture_service_start service invalid!");
+	}
+
+
+	/* event report service start */
+    status = event_report_service_start();
 	if(status != 0)
 	{
 		atel_dbg_print("event_report_sevice_start service invalid!");
 	}
+
+#endif
+
 	#if 0
 	/* daily heart beat report after system up */
 	status = daily_report_start();
@@ -915,7 +988,8 @@ void ig_on_process(IG_ON_RUNNING_MODE_E mode)
 	ULONG reschedule_ticks = 0;
 	TX_TIMER * next_timer;
 
-	
+	/* ignition on event is triggered */
+	tx_event_flags_set(events_signal_handle, IG_ON_EVT, TX_OR);
 
 	while(1)
 	{
@@ -1016,13 +1090,37 @@ boolean system_timer_init(void)
 
 /*
 @func
+  data_capture_process
+@brief
+  data capture thread. 
+*/
+
+int data_capture_process(void)
+{
+	/* simulate data copy to temporary memory */
+	while (1) 
+	{
+		tmp_mem[frame_index][0] = tx_time_get();
+		tmp_mem[frame_index][1] = 0x1234;/* simulate the address the actual data */
+		frame_index = (frame_index + 1) % MAX_TMP_MEM;
+		/* sleep one tick */
+		tx_thread_sleep(1);
+	}
+	
+	return 0;
+}
+
+
+/*
+@func
   event_det
 @brief
   events process entry. 
 */
 
-void event_detect(void)
+int event_record(void)
 {
+	#if 0
 	ULONG event_flag = 0;
 	char *event_type = NULL;
 	/* check event bitmap */
@@ -1039,12 +1137,139 @@ void event_detect(void)
 		/* active a timer to capture tempory auto report data */
 		tx_timer_activate(&auto_report);
 	}
+	else if(event_flag&IG_ON_EVT)
+	{
+		atel_dbg_print("receive igniton on msg");
+		
+	}
 	else
 	{
 		atel_dbg_print("under development");
 	}
+	#endif
+
+	ULONG frame, event_priority, event_time, index, frame_data[2];
+	while (1)
+	{
+		/* Copy an event from temporary memory to report buffer. */
+		/* Get frame_index from event message queue and copy 24 frames */
+		/* from temp_memory to report buffer. */
+		tx_queue_receive(&evt_notice, frame_data, TX_NO_WAIT);
+		/* Store event time and event priority in protected memory */
+		frame = frame_data[0];
+		event_priority = frame_data[1];
+		
+		event_time = tmp_mem[frame][0];
+		
+		atel_dbg_print("**Event** Time: %5lu Count: %2lu Pri: %lu", event_time, event_count, event_priority);
+		
+		if (event_count < MAX_EVENTS)
+		{
+			/* make sure only one event get the lock */
+			tx_mutex_get(&rep_mem_mutex, TX_WAIT_FOREVER);
+			
+			rep_buf[event_count][0] = event_time;
+			rep_buf[event_count][1] = event_priority;
+			
+			if (frame < 11)
+				frame = (MAX_TMP_MEM-1) - (frame_index+1);
+			
+			for (index = 0; index < 24; index++)
+			{
+				rep_buf[event_count][index+2] = tmp_mem[frame][1];
+				frame = (frame+1) % MAX_TMP_MEM;
+			}
+			/* send head msg to server */
+			//qapi_sendto(auto_rep_fd, );
+			
+			tx_mutex_put(&rep_mem_mutex);
+			event_count++;
+		}
+		else 
+			atel_dbg_print(" **not processed**");
+		
+		tx_thread_suspend(&evt_rep_config.module_thread_handle);
+	}
+
+	return 0;
 	
 }
+
+/* begin: timer function */
+void unsafe_ISR(ULONG timer_input)
+{
+	ULONG frame_data[2];
+	frame_data[0] = frame_index;
+	frame_data[1] = MIDDLE_E;/* prio of the event */
+	num_unsafe++;
+	/* Activates timer to expire in 12 seconds - end of event */
+	/* Put frame_index and priority on queue for crash events */
+	tx_queue_send(&evt_notice, frame_data, TX_NO_WAIT);
+	tx_timer_activate(&unsafe_copy_scheduler);
+	
+	return;
+}
+
+void warning_ISR(ULONG timer_input)
+{	
+	ULONG frame_data[2];
+	frame_data[0] = frame_index;
+	frame_data[1] = NORMAL_E;/* prio of the event */
+	num_warning++;
+	/* Activates timer to expire in 12 seconds - end of event */
+	/* Put frame_index and priority on queue for crash events */
+	tx_queue_send(&evt_notice, frame_data, TX_NO_WAIT);
+	tx_timer_activate(&warning_copy_scheduler);
+	return;
+}
+
+void unsafe_copy_activate(ULONG timer_input)
+{
+	/* resume recorder thread to initiate data recording */
+	tx_thread_resume(&evt_rep_config.module_thread_handle);
+	tx_timer_deactivate(&unsafe_copy_scheduler);
+	
+	return;
+}
+
+void warning_copy_activate(ULONG timer_input)
+{
+	/* resume recorder thread to initiate data recording */
+	tx_thread_resume(&evt_rep_config.module_thread_handle);
+	tx_timer_deactivate(&warning_copy_scheduler);
+	return;
+}
+
+void print_stats (ULONG invalue)
+{
+	UINT row, col;
+	atel_dbg_print("\n SLP01 System Periodic Event Summary");
+	atel_dbg_print(" Current Time: %lu\n", tx_time_get());
+	atel_dbg_print(" Number of Unsafe Events: %lu\n", num_unsafe);
+	atel_dbg_print(" Number of Warnings: %lu\n", num_warning);
+	
+	if (event_count > 0)
+	{
+		atel_dbg_print("\n\n**** Portion of Protected Memory Contents\n\n");
+		atel_dbg_print("%6s%6s%6s\n", "Time", "Pri", "Data");
+		for (row = 0; row < event_count; row++)
+		{
+			for (col = 0; col < 8; col++)
+				atel_dbg_print("%6lu", rep_buf[row][col]);
+			atel_dbg_print(" (etc.)\n");
+		}
+	}
+	
+	if (event_count >= MAX_EVENTS)
+		atel_dbg_print(" Warning: report buffer is full...");
+
+	return;
+}
+
+
+
+
+/* end */
 
 /*
 @func
@@ -1075,11 +1300,61 @@ void event_early_init(void)
 	{
 		atel_dbg_print("[quectel_task_entry]byte_pool_event create failed!");
 	}
+
+	/* begin: init timer */
 	
-	status = txm_module_object_allocate(&evt_queue, sizeof(TX_QUEUE));
+	status = txm_module_object_allocate(&unsafe_intr, sizeof(TX_TIMER));
 	if(status != TX_SUCCESS)
 	{
-		atel_dbg_print("[main thread] txm_module_object_allocate evt_queue failed, %d", status);
+		atel_dbg_print("[main thread] txm_module_object_allocate unsafe_intr failed, %d", status);
+	}
+	
+	status = txm_module_object_allocate(&warning_intr, sizeof(TX_TIMER));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate warning_intr failed, %d", status);
+	}
+
+	status = txm_module_object_allocate(&unsafe_copy_scheduler, sizeof(TX_TIMER));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate unsafe_intr failed, %d", status);
+	}
+	
+	status = txm_module_object_allocate(&warning_copy_scheduler, sizeof(TX_TIMER));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate warning_intr failed, %d", status);
+	}
+
+	status = txm_module_object_allocate(&stats_timer, sizeof(TX_TIMER));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate warning_intr failed, %d", status);
+	}
+	
+	/* timer to simulate event and alarm */
+	tx_timer_create(&unsafe_intr, "unsafe_interrupt", unsafe_ISR, 0x1234, 760, 760, TX_AUTO_ACTIVATE);
+	tx_timer_create(&warning_intr, "warning_interrupt", warning_ISR, 0x1234, 410, 410, TX_AUTO_ACTIVATE);
+	/* timer for send msg to data process thread */
+	tx_timer_create(&unsafe_copy_scheduler, "unsafe_copy_scheduler", unsafe_copy_activate, 0x1234, 12, 12, TX_NO_ACTIVATE);
+	tx_timer_create(&warning_copy_scheduler, "warning_copy_scheduler", warning_copy_activate, 0x1234, 12, 12, TX_NO_ACTIVATE);
+	/* Create and activate the timer to print statistics periodically */
+	tx_timer_create (&stats_timer, "stats_timer", print_stats, 0x1234, 1000, 1000, TX_AUTO_ACTIVATE);
+
+	/* end */
+	
+	status = txm_module_object_allocate(&evt_notice, sizeof(TX_QUEUE));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate evt_notice failed, %d", status);
+	}
+
+	/* critcal region protect while send msg to server */
+	status = txm_module_object_allocate(&rep_mem_mutex, sizeof(TX_MUTEX));
+	if(status != TX_SUCCESS)
+	{
+		atel_dbg_print("[main thread] txm_module_object_allocate rep_mem_mutex failed, %d", status);
 	}
 	
 	status = tx_byte_allocate(byte_pool_event, (void **)&event_que_handle, QUEUE_NODE_MAX * sizeof(event_msg), TX_NO_WAIT);
@@ -1087,9 +1362,9 @@ void event_early_init(void)
 	{
 		atel_dbg_print("[quectel_task_entry] tx_byte_allocate event_msg failed");
 	}
-	/* to be msg_size 32-bit words long */
+	/* to be 32-bit words long */
 	msg_size = sizeof(event_msg)/sizeof(uint32);
-	status = tx_queue_create(evt_queue, "event transmit", msg_size, event_que_handle, QUEUE_NODE_MAX * sizeof(event_msg));
+	status = tx_queue_create(evt_notice, "event transmit", msg_size, event_que_handle, QUEUE_NODE_MAX * sizeof(event_msg));
 	if (TX_SUCCESS != status)
 	{
 		atel_dbg_print("[quectel_task_entry]tx_queue_create failed with status %d", status);
@@ -1130,8 +1405,11 @@ int quectel_task_entry(void)
 
 	/* init gpio */
 	gpio_init();
+
+	/* init open source for event report */
+	//event_early_init();
 	
-#ifdef ATEL_DEBUG
+#ifndef ATEL_DEBUG
 	/* ignition timer init */
 	ig_timer_init();
 #endif
@@ -1175,7 +1453,8 @@ int quectel_task_entry(void)
 
 #ifdef ATEL_DEBUG
 	//daily_report_start();
-	
+	/* init queue for gps data */
+	rq_init();
 	/* Init timer for sending data every 5seconds */
 	udp_data_transfer_timer_def();
 	udp_data_transfer_timer_start();

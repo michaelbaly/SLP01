@@ -40,7 +40,7 @@
 #define QL_DEF_APN	        "CMNET"
 #define DSS_ADDR_INFO_SIZE	5
 #define DSS_ADDR_SIZE       16
-#define AUTO_REPORT_DEBUG
+//#define AUTO_REPORT_DEBUG
 
 
 #define GET_ADDR_INFO_MIN(a, b) ((a) > (b) ? (b) : (a))
@@ -885,6 +885,7 @@ static void udp_data_notify_signal_callback(uint32 userData)
 	static uint32 cnt = 0;
 	char sent_buff[SENT_BUF_SIZE];
 	struct sockaddr_in server_addr;
+	char *fir_ele = NULL;
 
 	sock_fd = auto_rep_fd;
 	memset(sent_buff, 0, sizeof(sent_buff));
@@ -893,7 +894,16 @@ static void udp_data_notify_signal_callback(uint32 userData)
 	server_addr.sin_port = _htons(DEF_SRV_PORT);
 	server_addr.sin_addr.s_addr = inet_addr(DEF_SRV_ADDR);
 
+#if 1
+	/* get head addr of the queue */
+	fir_ele = get_first_ele();
+	atel_dbg_print("addr of first element is [%p]", fir_ele);
+	strncpy(sent_buff, fir_ele, strlen(fir_ele));
+	/* release head element */
+	dequeue();
+#else
 	strcpy(sent_buff, "this msg came from data transmit timer");
+#endif
 
 	/* Start sending data to server after connecting server success */
 	sent_len = qapi_sendto(sock_fd, sent_buff, strlen(sent_buff), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));

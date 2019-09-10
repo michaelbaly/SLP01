@@ -23,6 +23,7 @@
 #include "qapi_location.h"
 #include "txm_module.h"
 #include "quectel_uart_apis.h"
+#include "atel_gps.h"
 
 
 /**************************************************************************
@@ -46,9 +47,107 @@ qapi_Location_t location;
 #define GPS_USER_BUFFER_SIZE 4096
 static uint8_t GPSuserBuffer[GPS_USER_BUFFER_SIZE];
 qapi_loc_client_id loc_clnt;
+
+char *udp_msg_addr = NULL;
+/* begin: rq for cmd from server */
+r_queue_s rq;
+/* end */
+
+extern TX_BYTE_POOL *byte_pool_event;
 /**************************************************************************
 *                                 FUNCTION
 ***************************************************************************/
+/* init the ring queue */
+void rq_init()
+{
+	char cnt = 0;
+	
+	rq.front = rq.rear = 0;
+	while(cnt < R_QUEUE_SIZE)
+		rq.p_ack[cnt++] = NULL;
+}
+
+/* judge empty */
+bool isempty(r_queue_s rq)
+{
+	if(rq.front == rq.rear)
+	{
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}
+}
+
+/* judge full */
+bool isfull(r_queue_s rq)
+{
+	if ((rq.rear + 1) % R_QUEUE_SIZE == rq.front)
+	{
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}
+}
+
+/* enqueue */
+void enqueue(char *cmd)
+{
+	if(isfull(rq))
+	{
+		atel_dbg_print("queue is full\n");
+		return;
+	}
+	atel_dbg_print("[enqueue]the enqueue addr is %p\n", cmd);
+	rq.p_ack[rq.rear] = cmd;
+	rq.rear = (rq.rear + 1) % R_QUEUE_SIZE;
+
+}
+
+void dequeue()
+{
+	if (isempty(rq))
+	{
+		atel_dbg_print("queue is empty\n");
+		return;
+	}
+
+	atel_dbg_print("[dequeue]the release addr is %p", rq.p_ack[rq.front]);
+	/* release the allocated buff */
+	tx_byte_release(rq.p_ack[rq.front]);
+
+	/* move head pointer to next */
+	rq.front = (rq.front + 1) % R_QUEUE_SIZE;
+
+}
+
+char * get_first_ele()
+{
+	if (isempty(rq))
+	{
+		atel_dbg_print("queue is empty\n");
+		return NULL;
+	}
+
+	atel_dbg_print("[get_first_ele]the head addr is %p", rq.p_ack[rq.front]);
+	return rq.p_ack[rq.front];
+}
+
+
+void show_queue_cont()
+{
+	char *tmp = rq.p_ack[rq.front];
+	
+	while(tmp)
+	{
+		atel_dbg_print("[cur_queue]%s", tmp);
+		rq.front++;
+		tmp = rq.p_ack[rq.front];
+	}
+}
 
 /*==========================================================================
 LOCATION API REGISTERED CALLBACKS
@@ -163,11 +262,27 @@ void loc_info_transform(qapi_Location_t location, char* trans_buf)
 /* triggered per second generally */
 static void location_tracking_callback(qapi_Location_t loc)
 {
+	int status = -1;
     if(loc.flags & QAPI_LOCATION_HAS_LAT_LONG_BIT) 
     {
-    	/* copy to loc to report buff */
-        memcpy(&location,&loc,sizeof(qapi_Location_t));
-        tx_event_flags_set(gps_signal_handle, LOCATION_TRACKING_FIXED_BIT, TX_OR);
+    	/* allocate buf to store gps data */
+	
+		status = tx_byte_allocate(byte_pool_event, (void **)&udp_msg_addr, loc.size + 1, TX_NO_WAIT);
+		if(status != TX_SUCCESS)
+		{
+			atel_dbg_print("[quectel_task_entry] tx_byte_allocate udp_msg_addr failed");
+		}
+		/* transform the loc info */
+		//loc_info_transform(loc, udp_msg_addr);
+		
+		atel_dbg_print("allocate address is [%p]", udp_msg_addr);
+		/* copy data */
+		memset(udp_msg_addr, 0, loc.size + 1);
+		strncpy(udp_msg_addr, &loc, loc.size);
+
+		/* enqueue the gsp data */
+		enqueue(udp_msg_addr);
+        
     }    
 }
 
